@@ -24,6 +24,12 @@ on:
         description: Enterprise build
         type: boolean
 
+      show_build_commit_sha:
+        description: Explicit override for RI_SHOW_BUILD_COMMIT_SHA ('true'/'false'); empty falls back to per-env default.
+        required: false
+        default: ''
+        type: string
+
 jobs:
   build-linux:
     name: Build linux ${{ matrix.arch }}
@@ -64,7 +70,7 @@ jobs:
             needsSystemFpm: true
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.0
 
       # SSH Debug
       - name: Enable SSH
@@ -78,6 +84,7 @@ jobs:
         with:
           keytar-host-mirror: ${{ secrets.NPM_CONFIG_KEYTAR_BINARY_HOST_MIRROR }}
           sqlite3-host-mirror: ${{ secrets.NPM_CONFIG_NODE_SQLITE3_BINARY_HOST_MIRROR }}
+          cache-node-modules: '0'
 
       - name: Install plugins dependencies and build plugins
         run: yarn build:statics
@@ -112,6 +119,31 @@ jobs:
           sudo apt-get update -qy
           sudo apt-get install -qy ruby ruby-dev build-essential
           sudo gem install --no-document fpm
+
+      # The snap target builds on core24 via snapcraft + the GNOME extension,
+      # which requires an isolated build environment (LXD). x64 only — snap is x64.
+      - name: Install snapcraft + LXD (for core24 snap build)
+        if: >-
+          matrix.arch == 'x64'
+          && steps.resolve-targets.outputs.should_build == 'true'
+          && (steps.resolve-targets.outputs.mode == 'default'
+              || contains(steps.resolve-targets.outputs.custom_targets, 'snap'))
+        run: |
+          sudo snap install snapcraft --classic
+          sudo snap install lxd
+          sudo lxd waitready --timeout=60
+          sudo lxd init --auto
+          sudo usermod -aG lxd "$USER"
+          # The build step runs in a shell started before the group change, so the
+          # new 'lxd' group isn't active there and snapcraft's pylxd can't reach the
+          # socket ("LXD requires additional permissions"). Grant the socket directly
+          # so snapcraft can connect without a re-login.
+          sudo chmod 0666 /var/snap/lxd/common/lxd/unix.socket
+          # GitHub runners run Docker, which sets the iptables FORWARD policy to DROP.
+          # That blocks the LXD bridge's NAT traffic, so the snapcraft build container
+          # has no internet ("A network related operation failed..."). Allow forwarding
+          # so the container can fetch the base, GNOME extension, and stage-packages.
+          sudo iptables -P FORWARD ACCEPT
 
       - name: Build linux packages (production)
         if: vars.ENV == 'production' && steps.resolve-targets.outputs.mode == 'default'
@@ -196,6 +228,12 @@ jobs:
       RI_CLOUD_IDP_REDIRECT_URI: ${{ secrets.RI_CLOUD_IDP_REDIRECT_URI }}
       RI_CLOUD_IDP_TOKEN_URL: ${{ secrets.RI_CLOUD_IDP_TOKEN_URL }}
       RI_SEGMENT_WRITE_KEY: ${{ secrets.RI_SEGMENT_WRITE_KEY }}
+      RI_SENTRY_DSN: ${{ secrets.RI_SENTRY_DSN }}
+      RI_SENTRY_ENABLED: ${{ vars.RI_SENTRY_ENABLED }}
+      RI_SENTRY_ENVIRONMENT: ${{ vars.ENV }}
+      RI_SENTRY_AUTH_TOKEN: ${{ secrets.RI_SENTRY_AUTH_TOKEN }}
+      RI_SENTRY_ORG: ${{ vars.RI_SENTRY_ORG }}
+      RI_SENTRY_PROJECT: ${{ vars.RI_SENTRY_PROJECT }}
       RI_SERVER_TLS_CERT: ${{ secrets.RI_SERVER_TLS_CERT }}
       RI_SERVER_TLS_KEY: ${{ secrets.RI_SERVER_TLS_KEY }}
       RI_FEATURES_CONFIG_URL: ${{ secrets.RI_FEATURES_CONFIG_URL }}
@@ -203,6 +241,8 @@ jobs:
       RI_FEATURES_CLOUD_ADS_DEFAULT_FLAG: ${{ inputs.enterprise == false }}
       RI_DISABLE_AUTO_UPGRADE: ${{ inputs.enterprise }}
       RI_APP_TYPE: ${{ inputs.enterprise && 'ELECTRON_ENTERPRISE' || 'ELECTRON' }}
+      RI_APP_BUILD_COMMIT_SHA: ${{ github.sha }}
+      RI_SHOW_BUILD_COMMIT_SHA: ${{ inputs.show_build_commit_sha != '' && inputs.show_build_commit_sha || (vars.ENV != 'production' && 'true' || 'false') }}
       USE_SYSTEM_FPM: ${{ matrix.needsSystemFpm }}
 
   publish-artifacts:

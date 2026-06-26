@@ -14,28 +14,39 @@ inputs:
     description: SQLite3 binary host mirror
     required: false
 
+  cache-node-modules:
+    description: Cache node_modules between runs ('1' enabled, '0' disabled). Disable for jobs that build the application to avoid stale nested deps surviving lockfile changes.
+    default: '1'
+    required: false
+
 runs:
   using: 'composite'
   steps:
     - name: Setup Node
-      uses: actions/setup-node@v4.0.4
+      uses: actions/setup-node@v5
       with:
-        node-version: '22.22.0'
+        node-version-file: '.nvmrc'
 
     - name: Cache node_modules
       id: cache-node-modules
-      uses: actions/cache@v4
+      if: inputs.cache-node-modules != '0'
+      uses: actions/cache@v5
       with:
         path: |
           node_modules
           redisinsight/node_modules
           redisinsight/api/node_modules
-        key: node-modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'redisinsight/yarn.lock', 'redisinsight/api/yarn.lock') }}
+        # Hash both package.json and yarn.lock for every workspace so a
+        # change to either invalidates the cache. Hashing only yarn.lock
+        # let package.json edits without `yarn install` cache-hit, which
+        # skipped `yarn install --frozen-lockfile` and hid the resulting
+        # package.json / yarn.lock mismatch.
+        key: node-modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package.json', 'yarn.lock', 'redisinsight/package.json', 'redisinsight/yarn.lock', 'redisinsight/api/package.json', 'redisinsight/api/yarn.lock') }}
         restore-keys: |
           node-modules-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
 
@@ -86,3 +97,18 @@ runs:
         if [ ! -f redisinsight/api-client/index.ts ]; then
           yarn --cwd redisinsight/api generate:api-client
         fi
+
+    # When install ran (cache miss), its postinstall executed
+    # `yarn-deduplicate yarn.lock`. If the committed lockfile was not
+    # dedup-clean, postinstall rewrote it in place and this diff fails.
+    # On cache hit install was skipped — the lockfile is byte-identical
+    # to a previously verified state, so the diff is a no-op.
+    - name: Verify root yarn.lock is unchanged after install
+      shell: bash
+      run: |
+        if ! git diff --exit-code --quiet -- yarn.lock; then
+          echo "::error file=yarn.lock::yarn.lock was modified by 'yarn install' (postinstall ran yarn-deduplicate). The committed lockfile is not dedup-clean. Run 'yarn install' at the repo root locally and commit the updated yarn.lock."
+          git --no-pager diff --stat -- yarn.lock
+          exit 1
+        fi
+        echo "yarn.lock is unchanged after install — dedup-clean ✅"

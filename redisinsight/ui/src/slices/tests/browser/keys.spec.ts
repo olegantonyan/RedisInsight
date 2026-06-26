@@ -1,4 +1,5 @@
 import { cloneDeep } from 'lodash'
+import { faker } from '@faker-js/faker'
 import { AxiosError } from 'axios'
 import { configureStore } from '@reduxjs/toolkit'
 import { getConfig } from 'uiSrc/config'
@@ -10,6 +11,7 @@ import {
 } from 'uiSrc/constants'
 import {
   ListElementDestination,
+  CreateArrayWithExpireDto,
   CreateHashWithExpireDto,
   CreateListWithExpireDto,
   CreateRejsonRlWithExpireDto,
@@ -52,6 +54,7 @@ import reducer, {
   addKey,
   addKeyFailure,
   addKeySuccess,
+  addArrayKey,
   addListKey,
   addReJSONKey,
   addSetKey,
@@ -144,7 +147,7 @@ describe('keys slice', () => {
       const nextState = initialState
 
       // Act
-      const result = reducer(undefined, {})
+      const result = reducer(undefined, { type: '' })
 
       // Assert
       expect(result).toEqual(nextState)
@@ -511,7 +514,7 @@ describe('keys slice', () => {
         selectedKey: {
           ...initialState.selectedKey,
           refreshing: false,
-          data: { ...initialState.selectedKey.data, ...data },
+          data: { ...data, nameString: 'keyName' },
         },
       }
 
@@ -523,6 +526,45 @@ describe('keys slice', () => {
         browser: { keys: nextState },
       })
       expect(keysSelector(rootState)).toEqual(state)
+    })
+
+    it('should drop type-specific fields absent from the new payload', () => {
+      // Refresh after a key is overwritten as a different type should
+      // not leak stale type-specific fields (count from Array,
+      // vectorDim/quantType from Vector Set, etc.). Reducer replaces
+      // `data` outright instead of merging the payload over it.
+      const previous = {
+        ...initialState,
+        selectedKey: {
+          ...initialState.selectedKey,
+          data: {
+            name: stringToBuffer('keyName'),
+            type: KeyTypes.Array,
+            ttl: -1,
+            size: 100,
+            length: 6,
+            count: '7',
+            nameString: 'keyName',
+          },
+        },
+      }
+      // Simulates the same key being overwritten as a String — the BE's
+      // string key-info strategy omits `count`.
+      const refreshed = {
+        name: stringToBuffer('keyName'),
+        type: KeyTypes.String,
+        ttl: -1,
+        size: 5,
+        length: 5,
+      }
+
+      const nextState = reducer(previous, refreshKeyInfoSuccess(refreshed))
+
+      expect(nextState.selectedKey.data).toEqual({
+        ...refreshed,
+        nameString: 'keyName',
+      })
+      expect(nextState.selectedKey.data?.count).toBeUndefined()
     })
   })
 
@@ -1756,6 +1798,33 @@ describe('keys slice', () => {
           addKeySuccess(),
           updateKeyList({ keyName: data.keyName, keyType: 'list' }),
           addMessageNotification(successMessages.ADDED_NEW_KEY(data.keyName)),
+        ]
+        expect(store.getActions()).toEqual(expectedActions)
+      })
+    })
+
+    describe('addArrayKey', () => {
+      it('success to add key', async () => {
+        // Arrange
+        const keyName = stringToBuffer(faker.string.alphanumeric(10))
+        const data = {
+          keyName,
+          mode: 'sparse',
+          elements: [{ index: '5', value: 'value' }],
+        } as unknown as CreateArrayWithExpireDto
+        const responsePayload = { data, status: 200 }
+
+        apiService.post = jest.fn().mockResolvedValue(responsePayload)
+
+        // Act
+        await store.dispatch<any>(addArrayKey(data, jest.fn()))
+
+        // Assert
+        const expectedActions = [
+          addKey(),
+          addKeySuccess(),
+          updateKeyList({ keyName: data.keyName, keyType: KeyTypes.Array }),
+          addMessageNotification(successMessages.ADDED_NEW_KEY(keyName)),
         ]
         expect(store.getActions()).toEqual(expectedActions)
       })

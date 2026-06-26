@@ -7,7 +7,10 @@ import {
 } from 'uiSrc/constants'
 import { KeyDetailsHeaderProps } from 'uiSrc/pages/browser/modules'
 import { RedisResponseBuffer } from 'uiSrc/slices/interfaces'
-import { isDevVectorSetEnabledSelector } from 'uiSrc/slices/app/features'
+import {
+  isDevArrayEnabledSelector,
+  isVectorSetEnabledSelector,
+} from 'uiSrc/slices/app/features'
 import { isTruncatedString } from 'uiSrc/utils'
 import TooLongKeyNameDetails from 'uiSrc/pages/browser/modules/key-details/components/too-long-key-name-details/TooLongKeyNameDetails'
 import ModulesTypeDetails from '../modules-type-details/ModulesTypeDetails'
@@ -20,6 +23,7 @@ import { HashDetails } from '../hash-details'
 import { ListDetails } from '../list-details'
 import { StreamDetails } from '../stream-details'
 import { VectorSetDetails } from '../vector-set-details'
+import { ArrayDetails } from '../array-details'
 
 export interface Props extends KeyDetailsHeaderProps {
   onOpenAddItemPanel: () => void
@@ -30,7 +34,8 @@ export interface Props extends KeyDetailsHeaderProps {
 
 const DynamicTypeDetails = (props: Props) => {
   const { keyType: selectedKeyType, keyProp } = props
-  const isDevVectorSet = useAppSelector(isDevVectorSetEnabledSelector)
+  const isVectorSet = useAppSelector(isVectorSetEnabledSelector)
+  const isArray = useAppSelector(isDevArrayEnabledSelector)
 
   const TypeDetails: any = {
     [KeyTypes.ZSet]: <ZSetDetails {...props} />,
@@ -40,8 +45,11 @@ const DynamicTypeDetails = (props: Props) => {
     [KeyTypes.List]: <ListDetails {...props} />,
     [KeyTypes.ReJSON]: <RejsonDetailsWrapper {...props} />,
     [KeyTypes.Stream]: <StreamDetails {...props} />,
-    ...(isDevVectorSet && {
+    ...(isVectorSet && {
       [KeyTypes.VectorSet]: <VectorSetDetails {...props} />,
+    }),
+    ...(isArray && {
+      [KeyTypes.Array]: <ArrayDetails {...props} />,
     }),
   }
 
