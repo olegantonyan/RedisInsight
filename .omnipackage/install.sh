@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds RedisInsight from source and stages it into the package buildroot.
 # Mirrors the project's real Linux pipeline (.github/.../install-all-build-libs +
-# pipeline-build-linux.yml): yarn install in root + redisinsight + redisinsight/api,
-# build plugins (build:statics), then `package:prod --linux dir` (electron-builder
+# pipeline-build-linux.yml): npm ci in redisinsight + redisinsight/api + root,
+# build plugins (build:statics), then `package:prod -- --linux dir` (electron-builder
 # rebuilds native modules against Electron's ABI and emits release/linux-unpacked).
 # That unpacked tree is staged into /opt/redisinsight (the path the app's own deb
 # hooks already expect), with a /usr/bin launcher, .desktop entry and icons.
@@ -24,25 +24,26 @@ export NODE_OPTIONS=--max_old_space_size=4096
 export RI_APP_TYPE=ELECTRON
 
 # --- toolchain ---------------------------------------------------------------
-nvm install        # reads .nvmrc (22.22.0)
+nvm install        # reads .nvmrc
 nvm use
-npm install -g yarn
 node -v
-yarn -v
+npm -v
 
 # --- dependencies (three trees, exactly like install-all-build-libs) ---------
-yarn --cwd redisinsight install --frozen-lockfile --network-timeout 1000000
-yarn --cwd redisinsight/api install --frozen-lockfile --network-timeout 1000000
-yarn install --frozen-lockfile --network-timeout 1000000
+# Each tree has its own .npmrc (legacy-peer-deps), so cd into it rather than
+# using --prefix: npm only reads the project .npmrc from the current directory.
+(cd redisinsight && npm ci)
+(cd redisinsight/api && npm ci)
+npm ci
 
 # OpenAPI client is gitignored and normally produced by the api postinstall.
 if [ ! -f redisinsight/api-client/index.ts ]; then
-  yarn --cwd redisinsight/api generate:api-client
+  npm run generate:api-client --prefix redisinsight/api
 fi
 
 # --- build -------------------------------------------------------------------
-yarn build:statics                  # plugins + vendor assets
-yarn package:prod --linux dir       # build:prod + electron-builder -> release/linux-unpacked
+npm run build:statics                  # plugins + vendor assets
+npm run package:prod -- --linux dir    # build:prod + electron-builder -> release/linux-unpacked
 
 # --- stage -------------------------------------------------------------------
 UNPACKED=$(ls -d release/linux-*unpacked 2>/dev/null | head -1)

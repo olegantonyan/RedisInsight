@@ -2,11 +2,12 @@
 # Docs: https://docs.omnipackage.org
 #
 # Build model (Electron, electron-builder "dir" approach):
-#   .omnipackage/prepare.sh   (before_build_script) — bootstraps nvm + node 22,
-#                              fixes python3 for node-gyp, enables CRB on EL clones.
-#   .omnipackage/install.sh    — runs the real RedisInsight build (yarn install in
-#                              root + redisinsight + redisinsight/api, build:statics,
-#                              package:prod --linux dir), then stages
+#   .omnipackage/prepare.sh   (before_build_script) — bootstraps nvm (node from
+#                              .nvmrc), fixes python3 for node-gyp, enables CRB on
+#                              EL clones.
+#   .omnipackage/install.sh    — runs the real RedisInsight build (npm ci in
+#                              redisinsight + redisinsight/api + root, build:statics,
+#                              package:prod -- --linux dir), then stages
 #                              release/linux-unpacked into /opt/redisinsight.
 # rpm %build / deb dh_auto_build stay empty; everything happens in install.sh.
 
@@ -157,7 +158,7 @@ debian: &debian
     ]
 
 # ---- build matrix -------------------------------------------------------------
-# Floor: node 22 + gcc 11 (C++20 native modules). EOL / pre-gcc11 distros dropped.
+# Floor: node 24 + gcc 11 (C++20 native modules). EOL / pre-gcc11 distros dropped.
 
 builds:
   - { distro: "fedora_40", <<: *fedora }
