@@ -55,6 +55,12 @@ describe('SearchTab', () => {
     expect(screen.getByTestId('array-search-form')).toBeInTheDocument()
   })
 
+  it('renders the value-format selector', () => {
+    renderTab()
+
+    expect(screen.getByTestId('select-format-key-value')).toBeInTheDocument()
+  })
+
   it('disables the search form while the key is locked for editing', () => {
     // isRefreshDisabled is set by the active table while a value editor is open
     // or an ARSET is in flight; the query form must not reload the table then.
@@ -156,7 +162,7 @@ describe('SearchTab', () => {
 
     // Context is off by default — enable it so the row can expand. fireEvent
     // sidesteps the redis-ui control's `pointer-events: none` wrapper.
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
 
     await user.click(screen.getByTestId('array-details-table-index-7'))
 
@@ -205,7 +211,7 @@ describe('SearchTab', () => {
       data: [arrayElementWithValueFactory.build({ index: '7' })],
     })
 
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
 
     expect(
       screen.getByTestId('array-details-table-index-7-expander'),
@@ -225,7 +231,7 @@ describe('SearchTab', () => {
       data: [arrayElementWithValueFactory.build({ index: '7' })],
     })
 
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
     await user.click(screen.getByTestId('array-details-table-index-7'))
 
     await waitFor(() =>
@@ -245,12 +251,12 @@ describe('SearchTab', () => {
 
     // Enabling Context enables its count input; reset must turn it back off
     // (context state lives in SearchTab, not the query hook's resetQuery).
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
-    expect(screen.getByTestId('array-search-form-context')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
+    expect(screen.getByTestId('array-context-control-count')).toBeEnabled()
 
     fireEvent.click(screen.getByTestId('array-search-form-reset'))
 
-    expect(screen.getByTestId('array-search-form-context')).toBeDisabled()
+    expect(screen.getByTestId('array-context-control-count')).toBeDisabled()
   })
 
   it('drops the multi-select when the search is reset', async () => {
@@ -290,7 +296,7 @@ describe('SearchTab', () => {
       data: [arrayElementWithValueFactory.build({ index: '7' })],
     })
 
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
     await user.click(screen.getByTestId('array-details-table-index-7'))
     expect(
       await screen.findByTestId('array-context-band-7'),
@@ -298,7 +304,7 @@ describe('SearchTab', () => {
 
     // Toggling Context off must unmount the band (and stop its fetch), not
     // leave an already-expanded match still showing it.
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
 
     await waitFor(() =>
       expect(
@@ -308,19 +314,28 @@ describe('SearchTab', () => {
   })
 
   it('resets Context to off when the selected key changes', () => {
-    const { rerender } = renderTab({
+    // Context lives in the subheader (gated on isArrayKeyReady), so move the
+    // prop and the store's selected key together to keep it visible to assert.
+    const state = buildState({
       loaded: true,
       loading: false,
       error: '',
       data: [arrayElementWithValueFactory.build({ index: '7' })],
     })
+    const store = mockStore(state)
+    store.clearActions()
+    const { rerender } = render(<SearchTab keyProp={keyBuffer} isActive />, {
+      store,
+    })
 
-    fireEvent.click(screen.getByTestId('array-search-form-context-toggle'))
+    fireEvent.click(screen.getByTestId('array-context-control-toggle'))
     expect(screen.getByRole('checkbox', { name: 'Context' })).toBeChecked()
 
     // The tab stays mounted across key switches; selecting another key resets
     // Context to its default rather than inheriting the previous key's.
-    rerender(<SearchTab keyProp={stringToBuffer('other-key')} isActive />)
+    const otherKey = stringToBuffer('other-key')
+    state.browser.keys.selectedKey.data!.name = otherKey
+    rerender(<SearchTab keyProp={otherKey} isActive />)
 
     expect(screen.getByRole('checkbox', { name: 'Context' })).not.toBeChecked()
   })

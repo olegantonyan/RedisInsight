@@ -67,6 +67,9 @@ export class KeyDetails {
   readonly addJsonFieldButton: Locator;
   readonly changeEditorTypeButton: Locator;
 
+  // Markdown-specific
+  readonly markdownViewer: Locator;
+
   constructor(page: Page) {
     this.page = page;
 
@@ -135,6 +138,9 @@ export class KeyDetails {
     this.jsonContent = page.getByTestId('json-details');
     this.addJsonFieldButton = page.getByRole('button', { name: 'Add field' });
     this.changeEditorTypeButton = page.getByRole('button', { name: 'Change editor type' });
+
+    // Markdown-specific - the rendered (sanitized) markdown output
+    this.markdownViewer = page.getByTestId('markdown-viewer');
   }
 
   async isVisible(): Promise<boolean> {
@@ -220,10 +226,12 @@ export class KeyDetails {
   }
 
   async editTtl(ttlSeconds: string): Promise<void> {
-    // Click on TTL to open edit mode
-    await this.ttlValue.click();
-    // Wait for the edit input to appear - use the textbox with "No limit" placeholder
+    // Edit mode replaces the TTL text with an inline input; clicking the hidden
+    // text then hangs, so open it only when the input is not already showing.
     const ttlInput = this.page.getByRole('textbox', { name: /no limit/i });
+    if (!(await ttlInput.isVisible())) {
+      await this.ttlValue.click();
+    }
     await ttlInput.waitFor({ state: 'visible' });
     // Clear and fill the new TTL value
     await ttlInput.clear();
@@ -882,5 +890,10 @@ export class KeyDetails {
     const scalarValues = this.page.getByTestId('json-scalar-value');
     const targetValue = scalarValues.nth(fieldIndex);
     return await targetValue.innerText();
+  }
+
+  // Markdown methods
+  async waitForMarkdownViewer(): Promise<void> {
+    await this.markdownViewer.waitFor({ state: 'visible' });
   }
 }

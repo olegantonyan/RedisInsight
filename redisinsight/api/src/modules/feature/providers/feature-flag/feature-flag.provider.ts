@@ -85,13 +85,6 @@ export class FeatureFlagProvider {
       ),
     );
     this.strategies.set(
-      KnownFeatures.VectorSearchV2,
-      new SwitchableFlagStrategy(
-        this.featuresConfigService,
-        this.settingsService,
-      ),
-    );
-    this.strategies.set(
       KnownFeatures.AzureEntraId,
       new CommonFlagStrategy(this.featuresConfigService, this.settingsService),
     );
@@ -100,19 +93,11 @@ export class FeatureFlagProvider {
       new CommonFlagStrategy(this.featuresConfigService, this.settingsService),
     );
     this.strategies.set(
-      KnownFeatures.VectorSet,
-      new CommonFlagStrategy(this.featuresConfigService, this.settingsService),
-    );
-    this.strategies.set(
-      KnownFeatures.DevArray,
+      KnownFeatures.Array,
       new SwitchableFlagStrategy(
         this.featuresConfigService,
         this.settingsService,
       ),
-    );
-    this.strategies.set(
-      KnownFeatures.ProdMode,
-      new CommonFlagStrategy(this.featuresConfigService, this.settingsService),
     );
     this.strategies.set(
       KnownFeatures.DevLanguage,
@@ -122,7 +107,18 @@ export class FeatureFlagProvider {
       ),
     );
     this.strategies.set(
-      KnownFeatures.WhatsNew,
+      KnownFeatures.ValueDecoder,
+      new CommonFlagStrategy(this.featuresConfigService, this.settingsService),
+    );
+    this.strategies.set(
+      KnownFeatures.VectorSearchEnhancements,
+      new SwitchableFlagStrategy(
+        this.featuresConfigService,
+        this.settingsService,
+      ),
+    );
+    this.strategies.set(
+      KnownFeatures.AppUpdateStrategySettings,
       new CommonFlagStrategy(this.featuresConfigService, this.settingsService),
     );
   }

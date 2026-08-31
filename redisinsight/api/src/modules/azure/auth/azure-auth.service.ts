@@ -8,12 +8,14 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   AZURE_AUTHORITY,
+  buildAzureAuthority,
   AZURE_CLIENT_ID,
   AZURE_REDIS_SCOPE,
   AZURE_MANAGEMENT_SCOPE,
   AZURE_OAUTH_DEEPLINK_REDIRECT_PATH,
   AZURE_OAUTH_SCOPES,
   AZURE_OAUTH_WEB_CALLBACK_ENDPOINT,
+  AZURE_TENANT_GUID_REGEX,
   AzureAuthStatus,
   AzureOAuthRedirectType,
   AzureRedisTokenEvents,
@@ -50,6 +52,12 @@ const generateCodeChallenge = (verifier: string): string =>
 const generateUuid = (): string => crypto.randomUUID();
 
 /**
+ * Compare tenant ids, which AAD reports in either casing.
+ */
+const isSameTenant = (a?: string, b?: string): boolean =>
+  !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
  * Service for handling Azure Entra ID authentication.
  * Uses MSAL (Microsoft Authentication Library) for OAuth 2.0 flows.
  */
@@ -61,6 +69,11 @@ interface AuthRequestData {
   redirectUri: string;
   redirectType: AzureOAuthRedirectType;
   createdAt: number;
+  /**
+   * Per-tenant authority chosen at sign-in, if any. Reused during the code
+   * exchange so the token is issued against the same tenant.
+   */
+  authority?: string;
 }
 
 /**
@@ -152,11 +165,14 @@ export class AzureAuthService {
    * Returns URL to redirect user to Microsoft login.
    * @param prompt - Optional prompt parameter to control login behavior.
    * @param redirectType - Type of redirect (deeplink for Electron, web for browser/Docker)
+   * @param tenantId - Optional tenant id/domain to authenticate against. When set,
+   *   the token is issued by that tenant instead of the user's home tenant.
    * @see https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#request-an-authorization-code
    */
   async getAuthorizationUrl(
     prompt?: AzureOAuthPrompt,
     redirectType: AzureOAuthRedirectType = AzureOAuthRedirectType.Deeplink,
+    tenantId?: string,
   ): Promise<{ url: string; state: string }> {
     const pca = this.getMsalClient();
 
@@ -164,6 +180,7 @@ export class AzureAuthService {
     const challenge = generateCodeChallenge(verifier);
     const state = generateUuid();
     const redirectUri = this.getRedirectUri(redirectType);
+    const authority = tenantId ? buildAzureAuthority(tenantId) : undefined;
 
     // Clean up any expired auth requests (abandoned flows) before adding new one
     this.cleanupExpiredAuthRequests();
@@ -174,6 +191,7 @@ export class AzureAuthService {
       redirectUri,
       redirectType,
       createdAt: Date.now(),
+      authority,
     });
 
     const authUrl = await pca.getAuthCodeUrl({
@@ -183,6 +201,7 @@ export class AzureAuthService {
       codeChallengeMethod: 'S256',
       state,
       ...(prompt && { prompt }),
+      ...(authority && { authority }),
     });
 
     this.logger.debug(
@@ -217,7 +236,7 @@ export class AzureAuthService {
       };
     }
 
-    const { verifier, redirectUri, redirectType } = authRequest;
+    const { verifier, redirectUri, redirectType, authority } = authRequest;
 
     // Clean up the auth request
     this.authRequests.delete(state);
@@ -228,6 +247,7 @@ export class AzureAuthService {
         scopes: AZURE_OAUTH_SCOPES,
         redirectUri,
         codeVerifier: verifier,
+        ...(authority && { authority }),
       });
 
       this.logger.log(
@@ -302,15 +322,18 @@ export class AzureAuthService {
    */
   async getRedisTokenByAccountId(
     accountId: string,
+    tenantId?: string,
   ): Promise<AzureTokenResult | null> {
     const tokenResult = await this.getTokenByAccountId(
       accountId,
       AZURE_REDIS_SCOPE,
+      tenantId,
     );
 
     if (tokenResult) {
       this.eventEmitter.emit(AzureRedisTokenEvents.Acquired, {
         accountId,
+        tenantId,
         tokenResult,
       });
     }
@@ -335,8 +358,13 @@ export class AzureAuthService {
    */
   async getManagementTokenByAccountId(
     accountId: string,
+    tenantId?: string,
   ): Promise<AzureTokenResult | null> {
-    return this.getTokenByAccountId(accountId, AZURE_MANAGEMENT_SCOPE);
+    return this.getTokenByAccountId(
+      accountId,
+      AZURE_MANAGEMENT_SCOPE,
+      tenantId,
+    );
   }
 
   /**
@@ -346,24 +374,66 @@ export class AzureAuthService {
   private async getTokenByAccountId(
     accountId: string,
     scope: string,
+    tenantId?: string,
   ): Promise<AzureTokenResult | null> {
     try {
       const pca = this.getMsalClient();
       const cache = pca.getTokenCache();
       const accounts = await cache.getAllAccounts();
 
-      const account = accounts.find((a) => a.homeAccountId === accountId);
+      // A user signed into multiple tenants has one cached record per realm,
+      // all sharing the same homeAccountId. When a tenant is requested, prefer
+      // the record for that realm so silent refresh targets the right tenant
+      // (falling back to any record for the account otherwise).
+      const forAccount = (a: AccountInfo) => a.homeAccountId === accountId;
+      const realmAccount =
+        tenantId &&
+        accounts.find(
+          (a) => forAccount(a) && isSameTenant(a.tenantId, tenantId),
+        );
+      const account = realmAccount || accounts.find(forAccount);
       if (!account) {
         this.logger.warn(`Account not found: ${accountId}`);
         return null;
       }
 
+      // When a tenant was chosen at sign-in, refresh against that same tenant
+      // authority. Without it, MSAL resolves to the account's home tenant.
+      const authority = tenantId ? buildAzureAuthority(tenantId) : undefined;
+
+      // MSAL resolves a cached access token by the realm of the account it is
+      // given and consults the request authority only on a cache miss, so a
+      // record from another realm yields that realm's token. Skipping the cache
+      // leaves the authority to decide which tenant issues the token.
+      const forceRefresh = Boolean(tenantId) && !realmAccount;
+
       const result = await pca.acquireTokenSilent({
         account,
         scopes: [scope],
+        ...(authority && { authority }),
+        ...(forceRefresh && { forceRefresh }),
       });
 
       if (!result?.accessToken || !result?.expiresOn || !result?.account) {
+        return null;
+      }
+
+      // A tenant given as a domain has no realm to compare against; there the
+      // request authority alone pins the issuing tenant.
+      const requestedRealm =
+        tenantId && AZURE_TENANT_GUID_REGEX.test(tenantId) ? tenantId : null;
+
+      // The target resource rejects a token from another realm, so report it as
+      // no token: callers then offer interactive re-authentication against the
+      // right tenant instead of an opaque auth error.
+      if (
+        requestedRealm &&
+        !isSameTenant(result.account.tenantId, requestedRealm)
+      ) {
+        this.logger.warn(
+          `Discarding token issued for tenant ${result.account.tenantId} ` +
+            `while tenant ${tenantId} was requested`,
+        );
         return null;
       }
 

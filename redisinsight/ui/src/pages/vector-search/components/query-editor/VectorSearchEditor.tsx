@@ -1,12 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { monaco as monacoEditor } from 'react-monaco-editor'
 
+import { useTranslation } from 'uiSrc/i18n'
 import { MonacoLanguage } from 'uiSrc/constants'
+import { useAppSelector } from 'uiSrc/slices/hooks'
+import { isVectorSearchEnhancementsEnabledSelector } from 'uiSrc/slices/app/features'
 import { CodeEditor } from 'uiSrc/components/base/code-editor'
-import { useQueryEditorContext, useQueryEditor } from 'uiSrc/components/query'
+import {
+  useQueryEditorContext,
+  useQueryEditor,
+  VectorEmbeddingHighlight,
+} from 'uiSrc/components/query'
 import { UseRedisCompletionsReturn } from 'uiSrc/components/query/hooks/useRedisCompletions.types'
 
-import { EDITOR_OPTIONS, EDITOR_PLACEHOLDER } from './QueryEditor.constants'
+import { EDITOR_OPTIONS } from './QueryEditor.constants'
 import { getOnboardingSuggestions } from './onboardingSuggestions'
 import * as S from './QueryEditor.styles'
 
@@ -52,7 +59,12 @@ const triggerEmptySuggestions = (
  * autocomplete behaviour takes over with all Redis commands available.
  */
 export const VectorSearchEditor = () => {
-  const { query, onSubmit, indexes, activeIndexName } = useQueryEditorContext()
+  const { t } = useTranslation()
+  const { monacoObjects, query, onSubmit, indexes, activeIndexName } =
+    useQueryEditorContext()
+  const vsEnhancementsEnabled = useAppSelector(
+    isVectorSearchEnhancementsEnabledSelector,
+  )
   // Start as true because useMonacoRedisEditor auto-focuses the editor on mount
   const [focused, setFocused] = useState(true)
   const [contentLeft, setContentLeft] = useState(0)
@@ -141,7 +153,7 @@ export const VectorSearchEditor = () => {
           $contentLeft={contentLeft}
           data-testid="editor-placeholder"
         >
-          {EDITOR_PLACEHOLDER}
+          {t('vectorSearch.query.editor.placeholder')}
         </S.EditorPlaceholder>
       )}
       <CodeEditor
@@ -152,6 +164,9 @@ export const VectorSearchEditor = () => {
         onChange={onChange}
         editorDidMount={editorDidMount}
       />
+      {vsEnhancementsEnabled && (
+        <VectorEmbeddingHighlight monacoObjects={monacoObjects} query={query} />
+      )}
     </S.EditorContainer>
   )
 }

@@ -2,7 +2,9 @@ import React, { useRef } from 'react'
 import { useAppDispatch, useAppSelector } from 'uiSrc/slices/hooks'
 import { monaco as monacoEditor } from 'react-monaco-editor'
 
+import { useTranslation } from 'uiSrc/i18n'
 import { MonacoLanguage } from 'uiSrc/constants'
+import { isVectorSearchEnhancementsEnabledSelector } from 'uiSrc/slices/app/features'
 import { CodeEditor } from 'uiSrc/components/base/code-editor'
 import {
   stopProcessing,
@@ -13,6 +15,7 @@ import {
   QueryActions,
   QueryTutorials,
   QueryLiteActions,
+  VectorEmbeddingHighlight,
   useQueryEditorContext,
   useCommandHistory,
   useDslSyntax,
@@ -23,6 +26,7 @@ import { Props } from './Query.types'
 import * as S from './Query.styles'
 
 const Query = (props: Props) => {
+  const { t } = useTranslation()
   const {
     activeMode,
     resultsMode,
@@ -36,6 +40,9 @@ const Query = (props: Props) => {
 
   const { monacoObjects, query, setQuery, isLoading, onSubmit } =
     useQueryEditorContext()
+  const vsEnhancementsEnabled = useAppSelector(
+    isVectorSearchEnhancementsEnabledSelector,
+  )
 
   const {
     items: execHistoryItems,
@@ -127,6 +134,12 @@ const Query = (props: Props) => {
             onChange={onChange}
             editorDidMount={editorDidMount}
           />
+          {vsEnhancementsEnabled && (
+            <VectorEmbeddingHighlight
+              monacoObjects={monacoObjects}
+              query={query}
+            />
+          )}
         </S.InputContainer>
         <S.QueryFooter>
           {useLiteActions ? (
@@ -138,7 +151,10 @@ const Query = (props: Props) => {
           ) : (
             <>
               <QueryTutorials
-                tutorials={TUTORIALS}
+                tutorials={TUTORIALS.map(({ id, titleKey }) => ({
+                  id,
+                  title: t(titleKey),
+                }))}
                 source="advanced_workbench_editor"
               />
               <QueryActions

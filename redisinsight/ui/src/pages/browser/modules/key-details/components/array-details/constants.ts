@@ -3,6 +3,7 @@
  * strings, never numbers, to preserve the full u64 range.
  */
 
+import { ParseKeys } from 'i18next'
 import {
   ArrayCombinator,
   ArrayGrepCriteria,
@@ -55,10 +56,10 @@ export enum ArrayDetailsTab {
 
 export const DEFAULT_ARRAY_DETAILS_TAB = ArrayDetailsTab.View
 
-export const ARRAY_DETAILS_TAB_LABELS: Record<ArrayDetailsTab, string> = {
-  [ArrayDetailsTab.View]: 'View',
-  [ArrayDetailsTab.Search]: 'Search',
-  [ArrayDetailsTab.Aggregate]: 'Aggregate',
+export const ARRAY_DETAILS_TAB_LABELS: Record<ArrayDetailsTab, ParseKeys> = {
+  [ArrayDetailsTab.View]: 'browser.array.tab.view',
+  [ArrayDetailsTab.Search]: 'browser.array.tab.search',
+  [ArrayDetailsTab.Aggregate]: 'browser.array.tab.aggregate',
 }
 
 /**
@@ -85,3 +86,6 @@ export const DEFAULT_CONTEXT = {
  * of a raw validation error.
  */
 export const ARRAY_BULK_DELETE_MAX = 1_000_000
+
+/** Shared by all three array forms; the "range-form" prefix is historical. */
+export const ARRAY_COMMAND_PREVIEW_TEST_ID = 'array-range-form-command-preview'

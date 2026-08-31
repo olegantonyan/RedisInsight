@@ -8,17 +8,24 @@ import { ArrayValueCell } from './components/ArrayValueCell'
 import { RowActionsCell } from './components/RowActionsCell'
 import { BulkDeleteHeaderCell } from './components/BulkDeleteHeaderCell'
 import { ArrayTableConfig } from './ArrayDetailsTable.types'
+import {
+  ACTIONS_COLUMN_CELL_CLASS,
+  ACTIONS_COLUMN_SIZE,
+  INDEX_COLUMN_SIZE,
+  SELECTION_COLUMN_WIDTH_REM,
+  VALUE_COLUMN_SIZE,
+} from './constants'
 
 export const TEST_ID = 'array-details-table'
-
-const ACTIONS_COLUMN_SIZE = 48
 
 const indexColumn: ColumnDef<ArrayDataElement> = {
   id: 'index',
   accessorKey: 'index',
-  header: 'Index',
+  header: 'browser.array.column.index',
   enableSorting: false,
   enableResizing: true,
+  size: INDEX_COLUMN_SIZE,
+  sizeUnit: 'px',
   cell: ({ row }: CellContext<ArrayDataElement, unknown>) => (
     <ArrayIndexCell
       index={row.original.index}
@@ -31,9 +38,11 @@ const indexColumn: ColumnDef<ArrayDataElement> = {
 const valueColumn: ColumnDef<ArrayDataElement> = {
   id: 'value',
   accessorKey: 'value',
-  header: 'Value',
+  header: 'browser.array.column.value',
   enableSorting: false,
   enableResizing: true,
+  size: VALUE_COLUMN_SIZE,
+  sizeUnit: 'px',
   cell: ({ row, table }: CellContext<ArrayDataElement, unknown>) => {
     const {
       compressor,
@@ -62,28 +71,64 @@ const valueColumn: ColumnDef<ArrayDataElement> = {
 }
 
 /**
- * Delete column, appended only when the consumer passes a `deleteConfig` (via
- * `meta`). The header hosts the bulk-delete trigger (shown only while rows are
- * selected); each cell hosts the per-row trash. The cell renders nothing for
- * empty slots.
+ * Row-actions column hosting the per-row edit, expand and delete affordances
+ * (revealed on hover). The header hosts the bulk-delete trigger (shown only
+ * while rows are selected). Editing wiring is always present in `meta`, so the
+ * cell derives an `editConfig` from it; `deleteConfig` is forwarded only when
+ * the consumer enables deletion.
  */
 export const actionsColumn: ColumnDef<ArrayDataElement> = {
   id: 'actions',
   // Custom so the header renders the bulk trigger raw, not as a column title.
   isHeaderCustom: true,
   header: ({ table }) => {
-    const { bulkDeleteConfig } = table.options.meta as ArrayTableConfig
-    if (!bulkDeleteConfig) return null
+    const { bulkDeleteConfig, isValueDrawerOpen, editingIndex, updating } =
+      table.options.meta as ArrayTableConfig
+    // Freeze bulk delete during any edit or in-flight write — the selection may
+    // include the edited element, whose pending ARSET would resurrect it.
+    if (
+      !bulkDeleteConfig ||
+      isValueDrawerOpen ||
+      editingIndex !== null ||
+      updating
+    )
+      return null
     return <BulkDeleteHeaderCell bulkDeleteConfig={bulkDeleteConfig} />
   },
   enableSorting: false,
   enableResizing: false,
   size: ACTIONS_COLUMN_SIZE,
   sizeUnit: 'px',
+  // Center the bulk trigger in the header cell (see ArrayDetailsTable.styles).
+  getHeaderCellProps: () => ({ className: ACTIONS_COLUMN_CELL_CLASS }),
   cell: ({ row, table }: CellContext<ArrayDataElement, unknown>) => {
-    const { deleteConfig } = table.options.meta as ArrayTableConfig
-    if (!deleteConfig) return null
-    return <RowActionsCell element={row.original} deleteConfig={deleteConfig} />
+    const {
+      compressor,
+      viewFormat,
+      editingIndex,
+      isValueDrawerOpen,
+      updating,
+      loading,
+      onEditElement,
+      onOpenValueEditor,
+      deleteConfig,
+    } = table.options.meta as ArrayTableConfig
+    return (
+      <RowActionsCell
+        element={row.original}
+        editConfig={{
+          compressor,
+          viewFormat,
+          editingIndex,
+          isValueDrawerOpen,
+          updating,
+          loading,
+          onEditElement,
+          onOpenValueEditor,
+        }}
+        deleteConfig={deleteConfig}
+      />
+    )
   },
 }
 
@@ -97,5 +142,21 @@ export const arrayColumns: ColumnDef<ArrayDataElement>[] = [
   valueColumn,
 ]
 
-const MIN_COLUMN_WIDTH = 160
-export const TABLE_MIN_WIDTH = `${arrayColumns.length * MIN_COLUMN_WIDTH}px`
+// Width below which the table scrolls horizontally instead of squeezing the
+// index/value columns. Sums every column present — including the optional
+// selection (rem) and actions (px) columns, hence the calc.
+export const getTableMinWidth = ({
+  hasSelectionColumn,
+  hasActionsColumn,
+}: {
+  hasSelectionColumn: boolean
+  hasActionsColumn: boolean
+}): string => {
+  const pxColumns =
+    INDEX_COLUMN_SIZE +
+    VALUE_COLUMN_SIZE +
+    (hasActionsColumn ? ACTIONS_COLUMN_SIZE : 0)
+  return hasSelectionColumn
+    ? `calc(${pxColumns}px + ${SELECTION_COLUMN_WIDTH_REM}rem)`
+    : `${pxColumns}px`
+}

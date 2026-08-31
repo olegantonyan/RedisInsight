@@ -22,21 +22,23 @@ jest.mock('uiSrc/telemetry', () => ({
 
 const latestVersion = whatsNewFeed[0].version
 
-const getOpenState = (flagsOn = false) => {
+// Card-level assertions pin to a shipped version so they don't churn when a
+// new release is added to the top of the feed. 3.6.0 carries unflagged cards
+// (e.g. geodata-workbench); 3.2.0's azure-managed-redis card is flag-gated
+// (azureEntraId) and is used to exercise the coming-soon / active states.
+const CONTENT_VERSION = '3.6.0'
+const FLAG_GATED_VERSION = '3.2.0'
+
+const getOpenState = (flagsOn = false, version = latestVersion) => {
   let state = set(cloneDeep(initialStateDefault), 'app.whatsNew', {
     isOpen: true,
-    selectedVersion: latestVersion,
+    selectedVersion: version,
     lastVersionSeen: null,
   })
   if (flagsOn) {
     state = set(
       state,
-      `app.features.featureFlags.features.${FeatureFlags.vectorSet}`,
-      { flag: true },
-    )
-    state = set(
-      state,
-      `app.features.featureFlags.features.${FeatureFlags.prodMode}`,
+      `app.features.featureFlags.features.${FeatureFlags.azureEntraId}`,
       { flag: true },
     )
   }
@@ -70,24 +72,30 @@ describe('WhatsNewModal', () => {
   })
 
   it('should show where to find a feature', () => {
-    render(<WhatsNewModal />, { store: mockStore(getOpenState()) })
+    render(<WhatsNewModal />, {
+      store: mockStore(getOpenState(false, CONTENT_VERSION)),
+    })
 
     expect(
       screen.getByTestId('whats-new-card-location-geodata-workbench'),
-    ).toBeInTheDocument()
-  })
-
-  it('should show flag-gated cards marked as coming soon when their flags are off', () => {
-    render(<WhatsNewModal />, { store: mockStore(getOpenState(false)) })
-
-    expect(screen.getByTestId('whats-new-card-vector-sets')).toBeInTheDocument()
-    expect(
-      screen.getByTestId('whats-new-card-inactive-vector-sets'),
     ).toBeInTheDocument()
     // unflagged card carries no indicator
     expect(
       screen.queryByTestId('whats-new-card-inactive-geodata-workbench'),
     ).not.toBeInTheDocument()
+  })
+
+  it('should show flag-gated cards marked as coming soon when their flags are off', () => {
+    render(<WhatsNewModal />, {
+      store: mockStore(getOpenState(false, FLAG_GATED_VERSION)),
+    })
+
+    expect(
+      screen.getByTestId('whats-new-card-azure-managed-redis'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('whats-new-card-inactive-azure-managed-redis'),
+    ).toBeInTheDocument()
   })
 
   it('should show versions whose cards are all flag-gated off', () => {
@@ -106,14 +114,15 @@ describe('WhatsNewModal', () => {
   })
 
   it('should not mark flag-gated cards when their flags are on', () => {
-    render(<WhatsNewModal />, { store: mockStore(getOpenState(true)) })
+    render(<WhatsNewModal />, {
+      store: mockStore(getOpenState(true, FLAG_GATED_VERSION)),
+    })
 
-    expect(screen.getByTestId('whats-new-card-vector-sets')).toBeInTheDocument()
     expect(
-      screen.queryByTestId('whats-new-card-inactive-vector-sets'),
-    ).not.toBeInTheDocument()
+      screen.getByTestId('whats-new-card-azure-managed-redis'),
+    ).toBeInTheDocument()
     expect(
-      screen.queryByTestId('whats-new-card-inactive-dev-vs-prod-mode'),
+      screen.queryByTestId('whats-new-card-inactive-azure-managed-redis'),
     ).not.toBeInTheDocument()
   })
 

@@ -268,8 +268,6 @@ const ONBOARDING_FEATURES = {
       const { id: connectedInstanceId = '' } = useAppSelector(
         connectedInstanceSelector,
       )
-      const { [FeatureFlags.vectorSearchV2]: vectorSearchFeature } =
-        useAppSelector(appFeatureFlagsFeaturesSelector)
 
       const dispatch = useAppDispatch()
       const history = useHistory()
@@ -301,12 +299,7 @@ const ONBOARDING_FEATURES = {
           dispatch(resetCliHelperSettings())
           dispatch(setMonitorInitialState())
 
-          if (vectorSearchFeature?.flag) {
-            history.push(Pages.vectorSearch(connectedInstanceId))
-          } else {
-            dispatch(setOnboardNextStep())
-            history.push(Pages.workbench(connectedInstanceId))
-          }
+          history.push(Pages.vectorSearch(connectedInstanceId))
 
           sendNextTelemetryEvent(...telemetryArgs)
         },
@@ -332,8 +325,8 @@ const ONBOARDING_FEATURES = {
         content: (
           <>
             This is Search, where you can index your data and query it using
-            Redis Query Engine. Run full-text search, vector similarity, and
-            filtered queries right from the UI.
+            Redis Search. Run full-text search, vector similarity, and filtered
+            queries right from the UI.
             <Spacer size="xs" />
             Load sample data to create your first index and run sample queries
             to see results instantly.
@@ -359,8 +352,6 @@ const ONBOARDING_FEATURES = {
       const { id: connectedInstanceId = '' } = useAppSelector(
         connectedInstanceSelector,
       )
-      const { [FeatureFlags.vectorSearchV2]: vectorSearchFeature } =
-        useAppSelector(appFeatureFlagsFeaturesSelector)
       const [firstIndex, setFirstIndex] = useState<Nullable<string>>(null)
 
       const dispatch = useAppDispatch()
@@ -445,13 +436,7 @@ const ONBOARDING_FEATURES = {
         ),
         onSkip: () => sendClosedTelemetryEvent(...telemetryArgs),
         onBack: () => {
-          if (vectorSearchFeature?.flag) {
-            history.push(Pages.vectorSearch(connectedInstanceId))
-          } else {
-            history.push(Pages.browser(connectedInstanceId))
-            dispatch(setOnboardPrevStep())
-            dispatch(showMonitor())
-          }
+          history.push(Pages.vectorSearch(connectedInstanceId))
 
           sendBackTelemetryEvent(...telemetryArgs)
         },

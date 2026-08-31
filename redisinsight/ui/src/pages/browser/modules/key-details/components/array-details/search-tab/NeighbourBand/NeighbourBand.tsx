@@ -9,6 +9,7 @@ import { ArrayDataElement } from 'uiSrc/slices/interfaces/array'
 import { getNeighbourRange } from 'uiSrc/utils/arrayIndex'
 import { DEFAULT_ERROR_MESSAGE, Nullable } from 'uiSrc/utils'
 import { KeyValueCompressor } from 'uiSrc/constants'
+import { useTranslation } from 'uiSrc/i18n'
 
 import { ARRAY_TABLE_LOADING_MESSAGE } from '../../array-details-table/constants'
 import {
@@ -32,6 +33,7 @@ export const NeighbourBand = ({
   matchIndex,
   count,
 }: NeighbourBandProps) => {
+  const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const { compressor = null } = useAppSelector(
     connectedInstanceSelector,
@@ -79,7 +81,7 @@ export const NeighbourBand = ({
   if (loading) {
     return (
       <S.Message data-testid={`${TEST_ID_PREFIX}-loading-${matchIndex}`}>
-        {ARRAY_TABLE_LOADING_MESSAGE}
+        {t(ARRAY_TABLE_LOADING_MESSAGE)}
       </S.Message>
     )
   }
@@ -106,13 +108,19 @@ export const NeighbourBand = ({
                 : `${TEST_ID_PREFIX}-row-${el.index}`
             }
           >
-            <ArrayIndexCell index={el.index} />
-            <ArrayValueCell
-              index={el.index}
-              value={el.value}
-              compressor={compressor}
-              viewFormat={viewFormat}
-            />
+            <span />
+            <S.BandCell>
+              <ArrayIndexCell index={el.index} />
+            </S.BandCell>
+            <S.BandCell>
+              <ArrayValueCell
+                index={el.index}
+                value={el.value}
+                compressor={compressor}
+                viewFormat={viewFormat}
+              />
+            </S.BandCell>
+            <span />
           </S.BandRow>
         )
       })}

@@ -46,6 +46,8 @@ export interface IndexListProps {
   data: IndexListRow[]
   /** Whether the list data is currently loading */
   loading?: boolean
+  /** Whether `data` has been narrowed by a search term, to pick the empty-state message */
+  isFiltered?: boolean
   /** Test ID for the list container */
   dataTestId?: string
   /** Callback when the Query button is clicked (index name is passed) */
@@ -58,8 +60,10 @@ export interface IndexListProps {
  * Action item for the index actions menu (e.g. Edit, Delete).
  */
 export interface IndexListAction {
-  /** Display name in the menu */
+  /** Stable identifier for the action (used for test ids and keys) */
   name: string
+  /** Translated display label; falls back to `name` when omitted */
+  label?: string
   /** Optional icon displayed next to the menu item */
   icon?: IconType
   /** Visual variant for the menu item (e.g. 'destructive' for delete actions) */

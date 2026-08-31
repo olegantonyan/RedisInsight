@@ -1,3 +1,4 @@
+import i18n from 'uiSrc/i18n'
 import {
   IndexInfo,
   IndexOptions,
@@ -8,6 +9,7 @@ import { IndexInfoTableData } from './IndexInfo.types'
 /**
  * Parses index attributes to table-friendly format.
  * Expects field types to already be normalized (lowercase).
+ * Flattens present boolean flags onto the row for dynamic columns.
  */
 export const parseIndexAttributes = (
   indexInfo: IndexInfo,
@@ -17,6 +19,7 @@ export const parseIndexAttributes = (
     attribute: field.attribute,
     type: field.type,
     weight: field.weight,
+    ...field.flags,
   }))
 
 /**
@@ -27,11 +30,17 @@ export const formatOptions = (options: IndexOptions): string => {
   const optionParts: string[] = []
 
   if (options.filter) {
-    optionParts.push(`filter: ${options.filter}`)
+    optionParts.push(
+      i18n.t('vectorSearch.indexInfo.optionFilter', { value: options.filter }),
+    )
   }
 
   if (options.defaultLang) {
-    optionParts.push(`language: ${options.defaultLang}`)
+    optionParts.push(
+      i18n.t('vectorSearch.indexInfo.optionLanguage', {
+        value: options.defaultLang,
+      }),
+    )
   }
 
   return optionParts.join(', ')

@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from 'react'
 
+import { useTranslation } from 'uiSrc/i18n'
 import { Table } from 'uiSrc/components/base/layout/table'
 
 import { IndexListProps } from './IndexList.types'
@@ -9,26 +10,28 @@ export const IndexList = memo(
   ({
     data,
     loading,
+    isFiltered,
     dataTestId = 'index-list',
     onQueryClick,
     actions,
   }: IndexListProps) => {
+    const { t } = useTranslation()
     const columns = useMemo(
       () => getIndexListColumns({ onQueryClick, actions }),
       [onQueryClick, actions],
     )
 
-    const hasIndexes = useMemo(() => !!data?.length, [data])
-
     const emptyMessage = useMemo(() => {
+      // Index info is only refetched when the index list itself changes, so while
+      // it loads the rows are stale and a filter over them can't be trusted
       if (loading) {
-        return 'Loading...'
+        return t('vectorSearch.list.empty.loading')
       }
-      if (!hasIndexes) {
-        return 'No indexes found'
+      if (isFiltered) {
+        return t('vectorSearch.list.empty.noResults')
       }
-      return 'No results found'
-    }, [loading, hasIndexes])
+      return t('vectorSearch.list.empty.noIndexes')
+    }, [loading, isFiltered, t])
 
     return (
       <Table

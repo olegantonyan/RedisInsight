@@ -201,7 +201,7 @@ test.describe('Browser > Key List View', () => {
     // Verify switching between Pattern search and Search by values UI
     await browserPage.keyList.searchByValuesButton.click();
     const indexOrHint = browserPage.keyList.indexSelector.or(
-      browserPage.page.getByText(/Redis Query Engine|Select an index|Query Engine/i),
+      browserPage.page.getByText(/Redis Search|Select an index/i),
     );
     await expect(indexOrHint.first()).toBeVisible();
     await browserPage.keyList.filterByNameButton.click();
@@ -247,8 +247,10 @@ test.describe('Browser > Key List View', () => {
 
     await browserPage.bulkActionsPanel.close();
 
+    // The rows going away is the assertion that belongs here. emptyDatabasePanel
+    // renders on the database's total key count, not on the filtered result, so
+    // asserting it would require the whole keyspace to be empty.
     await browserPage.keyList.searchKeys(bulkPattern);
-    await expect(browserPage.keyList.emptyDatabasePanel).toBeVisible();
     await expect(browserPage.keyList.getKeyRow(bulkKey1)).not.toBeVisible();
     await expect(browserPage.keyList.getKeyRow(bulkKey2)).not.toBeVisible();
   });

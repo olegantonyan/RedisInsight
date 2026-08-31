@@ -3,7 +3,7 @@ import React, { Ref, useCallback, useEffect, useRef, useState } from 'react'
 import { useAppDispatch, useAppSelector } from 'uiSrc/slices/hooks'
 import { CellMeasurerCache } from 'react-virtualized'
 
-import { isNumber, toNumber } from 'lodash'
+import { isNumber, isString, toNumber } from 'lodash'
 import { Text } from 'uiSrc/components/base/text'
 import { getColumnWidth } from 'uiSrc/components/virtual-grid'
 import { StopPropagation } from 'uiSrc/components/virtual-table'
@@ -17,12 +17,8 @@ import {
   KeyTypes,
   OVER_RENDER_BUFFER_COUNT,
   TableCellAlignment,
-  TEXT_DISABLED_ACTION_WITH_TRUNCATED_DATA,
-  TEXT_DISABLED_COMPRESSED_VALUE,
-  TEXT_DISABLED_FORMATTER_EDITING,
-  TEXT_FAILED_CONVENT_FORMATTER,
-  TEXT_INVALID_VALUE,
-  TEXT_UNPRINTABLE_CHARACTERS,
+  getTextInvalidValue,
+  getTextUnprintableCharacters,
 } from 'uiSrc/constants'
 import { SCAN_COUNT_DEFAULT } from 'uiSrc/constants/api'
 import HelpTexts from 'uiSrc/constants/help-texts'
@@ -75,12 +71,19 @@ import {
 import { stringToBuffer } from 'uiSrc/utils/formatters/bufferFormatters'
 import { decompressingBuffer } from 'uiSrc/utils/decompressors'
 import PopoverDelete from 'uiSrc/pages/browser/components/popover-delete/PopoverDelete'
+import { isValueDecoderEnabledSelector } from 'uiSrc/slices/app/features'
+import {
+  DecodedValueDisplay,
+  useValueDecoder,
+  ValueDecoderHeaderLabel,
+} from 'uiSrc/pages/browser/components/value-decoder'
 import {
   EditableInput,
   EditableTextArea,
   FormattedValue,
 } from 'uiSrc/pages/browser/modules/key-details/shared'
 import { RiTooltip } from 'uiSrc/components'
+import { useTranslation } from 'uiSrc/i18n'
 import {
   AddFieldsToHashDto,
   GetHashFieldsResponse,
@@ -109,6 +112,7 @@ export interface Props {
 
 const HashDetailsTable = (props: Props) => {
   const { isExpireFieldsAvailable, onRemoveKey } = props
+  const { t } = useTranslation()
 
   const {
     total,
@@ -143,12 +147,29 @@ const HashDetailsTable = (props: Props) => {
 
   const formattedLastIndexRef = useRef(OVER_RENDER_BUFFER_COUNT)
   const tableRef: Ref<any> = useRef(null)
+  const isInitialDecodeLayoutRef = useRef(true)
 
   const dispatch = useAppDispatch()
+  const isValueDecoderEnabled = useAppSelector(isValueDecoderEnabledSelector)
+  const { isDecodeEnabled, matchedRule } = useValueDecoder()
 
   useEffect(() => {
     resetState()
   }, [lastRefreshTime])
+
+  useEffect(() => {
+    if (!isValueDecoderEnabled) {
+      return
+    }
+
+    if (isInitialDecodeLayoutRef.current) {
+      isInitialDecodeLayoutRef.current = false
+      return
+    }
+
+    cellCache.clearAll()
+    tableRef.current?.recomputeRowHeights()
+  }, [isDecodeEnabled, isValueDecoderEnabled, matchedRule])
 
   useEffect(() => {
     setFields(loadedFields)
@@ -350,12 +371,12 @@ const HashDetailsTable = (props: Props) => {
   const columns: ITableColumn[] = [
     {
       id: 'field',
-      label: 'Field',
+      label: t('browser.hash.column.field'),
       isSearchable: true,
       isResizable: true,
       minWidth: 120,
       relativeWidth: hashSizes?.field || 40,
-      prependSearchName: 'Field:',
+      prependSearchName: t('browser.hash.searchFieldPrefix'),
       initialSearchValue: '',
       truncateText: true,
       alignment: TableCellAlignment.Left,
@@ -398,8 +419,10 @@ const HashDetailsTable = (props: Props) => {
                 expanded={expanded}
                 title={
                   isValid
-                    ? 'Field'
-                    : TEXT_FAILED_CONVENT_FORMATTER(viewFormatProp)
+                    ? t('browser.hash.column.field')
+                    : t('browser.keyDetails.failedConvertFormatter', {
+                        format: viewFormatProp,
+                      })
                 }
                 tooltipContent={tooltipContent}
               />
@@ -410,7 +433,11 @@ const HashDetailsTable = (props: Props) => {
     },
     {
       id: 'value',
-      label: 'Value',
+      label: isValueDecoderEnabled ? (
+        <ValueDecoderHeaderLabel label={t('browser.hash.column.value')} />
+      ) : (
+        t('browser.hash.column.value')
+      ),
       minWidth: 120,
       truncateText: true,
       alignment: TableCellAlignment.Left,
@@ -449,16 +476,31 @@ const HashDetailsTable = (props: Props) => {
           isFormatEditable(viewFormat) &&
           !isTruncatedFieldOrValue
         const editTooltipContent = isCompressed
-          ? TEXT_DISABLED_COMPRESSED_VALUE
+          ? t('browser.keyDetails.compressedValueDisabled')
           : isTruncatedFieldOrValue
-            ? TEXT_DISABLED_ACTION_WITH_TRUNCATED_DATA
-            : TEXT_DISABLED_FORMATTER_EDITING
+            ? t('browser.keyDetails.truncatedActionDisabled')
+            : t('browser.keyDetails.formatterEditingDisabled')
         const isEditing =
           editingIndex?.field === 'value' && editingIndex?.index === rowIndex
 
         const serializedValue = isEditing
           ? bufferToSerializedFormat(viewFormat, valueItem, 4)
           : ''
+
+        const formattedValueDisplay = (
+          <FormattedValue
+            value={formattedValue}
+            expanded={expanded}
+            title={
+              isValid
+                ? t('browser.hash.column.value')
+                : t('browser.keyDetails.failedConvertFormatter', {
+                    format: viewFormatProp,
+                  })
+            }
+            tooltipContent={tooltipContent}
+          />
+        )
 
         return (
           <EditableTextArea
@@ -467,12 +509,12 @@ const HashDetailsTable = (props: Props) => {
             isDisabled={disabled}
             isEditing={isEditing}
             isEditDisabled={!isEditable || updateLoading}
-            disabledTooltipText={TEXT_UNPRINTABLE_CHARACTERS}
+            disabledTooltipText={getTextUnprintableCharacters(t)}
             onDecline={() => handleEditField(rowIndex, false, 'value')}
             onApply={(value) =>
               handleApplyEditValue(fieldItem, value, rowIndex)
             }
-            approveText={TEXT_INVALID_VALUE}
+            approveText={getTextInvalidValue(t)}
             approveByValidation={(value) =>
               formattingBuffer(
                 stringToSerializedBufferFormat(viewFormat, value),
@@ -488,16 +530,17 @@ const HashDetailsTable = (props: Props) => {
             testIdPrefix="hash"
           >
             <div className="innerCellAsCell">
-              <FormattedValue
-                value={formattedValue}
-                expanded={expanded}
-                title={
-                  isValid
-                    ? 'Value'
-                    : TEXT_FAILED_CONVENT_FORMATTER(viewFormatProp)
-                }
-                tooltipContent={tooltipContent}
-              />
+              {isValueDecoderEnabled &&
+              !isTruncatedFieldOrValue &&
+              !isString(decompressedValueItem) ? (
+                <DecodedValueDisplay
+                  buffer={decompressedValueItem}
+                  expanded={expanded}
+                  fallback={formattedValueDisplay}
+                />
+              ) : (
+                formattedValueDisplay
+              )}
             </div>
           </EditableTextArea>
         )
@@ -538,7 +581,7 @@ const HashDetailsTable = (props: Props) => {
   if (isExpireFieldsAvailable) {
     columns.splice(2, 0, {
       id: 'ttl',
-      label: 'TTL',
+      label: t('browser.hash.column.ttl'),
       absoluteWidth: 140,
       minWidth: 140,
       truncateText: true,
@@ -554,13 +597,13 @@ const HashDetailsTable = (props: Props) => {
           editingIndex?.field === 'ttl' && editingIndex?.index === rowIndex
         const isTruncatedFieldName = isTruncatedString(fieldItem)
         const editTooltipContent = isTruncatedFieldName
-          ? TEXT_DISABLED_ACTION_WITH_TRUNCATED_DATA
+          ? t('browser.keyDetails.truncatedActionDisabled')
           : null
 
         return (
           <EditableInput
             initialValue={expire === -1 ? '' : expire?.toString()}
-            placeholder="Enter TTL"
+            placeholder={t('browser.hash.ttlPlaceholder')}
             field={field}
             isEditing={isEditing}
             onEdit={(value: boolean) => handleEditField(rowIndex, value, 'ttl')}
@@ -574,10 +617,10 @@ const HashDetailsTable = (props: Props) => {
           >
             <div className="innerCellAsCell">
               {expire === -1 ? (
-                'No Limit'
+                t('browser.hash.ttlNoLimit')
               ) : (
                 <RiTooltip
-                  title="Time to Live"
+                  title={t('browser.hash.ttlTooltipTitle')}
                   className={styles.tooltip}
                   anchorClassName="truncateText"
                   position="right"

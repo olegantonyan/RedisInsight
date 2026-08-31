@@ -9,6 +9,7 @@ import React, {
 import { useAppDispatch, useAppSelector } from 'uiSrc/slices/hooks'
 
 import { connectedInstanceSelector } from 'uiSrc/slices/instances/instances'
+import { appContextSelectedKey } from 'uiSrc/slices/app/context'
 import {
   selectedKeyDataSelector,
   selectedKeySelector,
@@ -22,16 +23,27 @@ import {
 import { KeyValueCompressor } from 'uiSrc/constants'
 import { Nullable, stringToSerializedBufferFormat } from 'uiSrc/utils'
 import { Row, Table } from 'uiSrc/components/base/layout/table'
+import {
+  BrowserConfirmationCommandId,
+  useProductionWriteConfirmation,
+} from 'uiSrc/components/production-write-confirmation'
 import { ArrayDataElement } from 'uiSrc/slices/interfaces/array'
+import { RedisResponseBuffer } from 'uiSrc/slices/interfaces'
+import { useTranslation } from 'uiSrc/i18n'
+import { ParseKeys } from 'i18next'
 
 import {
   ARRAY_TABLE_EMPTY_MESSAGE,
   ARRAY_TABLE_LOADING_MESSAGE,
+  SELECTION_COLUMN_CELL_CLASS,
+  SELECTION_COLUMN_WIDTH_REM,
 } from './constants'
+import { getArrayElementEditState } from './getArrayElementEditState'
+import { ArrayValueEditorDrawer } from './components/ArrayValueEditorDrawer'
 import {
   actionsColumn,
   arrayColumns,
-  TABLE_MIN_WIDTH,
+  getTableMinWidth,
   TEST_ID,
 } from './ArrayDetailsTable.config'
 import {
@@ -60,10 +72,14 @@ const ArrayDetailsTable = memo(
     selectionConfig,
     bulkDeleteConfig,
   }: ArrayDetailsTableProps) => {
+    const { t } = useTranslation()
     const dispatch = useAppDispatch()
-    const { compressor = null } = useAppSelector(
+    const { compressor = null, id: connectedInstanceId } = useAppSelector(
       connectedInstanceSelector,
-    ) as unknown as { compressor: Nullable<KeyValueCompressor> }
+    ) as unknown as {
+      compressor: Nullable<KeyValueCompressor>
+      id?: string
+    }
     const { viewFormat } = useAppSelector(selectedKeySelector)
     const {
       updating,
@@ -83,13 +99,41 @@ const ArrayDetailsTable = memo(
     const { name: keyName } = useAppSelector(selectedKeyDataSelector) ?? {
       name: '',
     }
+    // The live selection — updated on key click, before fetchKeyInfo. Unlike
+    // `keyName` (from selectedKeyData) it doesn't lag a switch.
+    const liveSelectedKey = useAppSelector(appContextSelectedKey)
 
-    // Index of the row currently being edited; only one row edits at a time.
+    const { requestConfirmation } = useProductionWriteConfirmation()
+
     const [editingIndex, setEditingIndex] = useState<Nullable<string>>(null)
+    // Row open in the Monaco drawer, plus its open-time seed. Held table-level
+    // (not per-row) so the drawer shares the inline editor's guards.
+    const [drawerIndex, setDrawerIndex] = useState<Nullable<string>>(null)
+    const [drawerSeed, setDrawerSeed] = useState('')
+    // Mirrors `drawerIndex` for reads inside the async production-write
+    // confirmation callback, so a pending save can tell whether the drawer was
+    // abandoned (closed, or moved to another row) while the dialog was open.
+    const drawerIndexRef = useRef<Nullable<string>>(null)
+    useEffect(() => {
+      drawerIndexRef.current = drawerIndex
+    }, [drawerIndex])
     // Identifies the current edit session. Bumped whenever an editor opens, so
     // a still-in-flight save from a previous session can't close an editor the
     // user has since reopened (which would discard the new input).
     const editSessionRef = useRef(0)
+    // Live mirror of the connected database id, so the stable open/apply
+    // callbacks can read it without a stale closure.
+    const connectedInstanceIdRef = useRef(connectedInstanceId)
+    useEffect(() => {
+      connectedInstanceIdRef.current = connectedInstanceId
+    }, [connectedInstanceId])
+    // Database connected when the inline editor opened. Its Save confirmation
+    // (in EditableTextArea) can be confirmed after a database switch, so the
+    // write is guarded with this id to avoid saving into the new database.
+    const inlineEditInstanceIdRef = useRef<string | undefined>(undefined)
+    // Same guard for the drawer, captured when it opens (not at Save) so a
+    // switch before the save still skips the write.
+    const drawerEditInstanceIdRef = useRef<string | undefined>(undefined)
 
     // Only the visible tab's table drives the editor-driven refresh pause, so
     // a hidden table can't re-enable refresh while the active one has an editor
@@ -99,8 +143,12 @@ const ArrayDetailsTable = memo(
     // active table reacts to it.)
     useEffect(() => {
       if (!isActive) return
-      dispatch(setSelectedKeyRefreshDisabled(editingIndex !== null || updating))
-    }, [isActive, editingIndex, updating, dispatch])
+      dispatch(
+        setSelectedKeyRefreshDisabled(
+          editingIndex !== null || drawerIndex !== null || updating,
+        ),
+      )
+    }, [isActive, editingIndex, drawerIndex, updating, dispatch])
 
     // When a table is hidden (tab switch) or unmounts, it releases the shared
     // flag but still respects an in-flight write (global), so switching to a
@@ -110,29 +158,49 @@ const ArrayDetailsTable = memo(
       dispatch(setSelectedKeyRefreshDisabled(updating))
     }, [isActive, updating, dispatch])
 
-    // Abandon an open editor when this table is hidden (tab switch) or the key
-    // changes, so a background editor can't keep refresh disabled and a stale
-    // editing state can't carry over.
+    // Abandon an open editor (inline or drawer) when this table is hidden (tab
+    // switch) or the key changes, so a background editor can't keep refresh
+    // disabled, leave a portaled drawer visible over the other tab, or carry
+    // stale editing state across keys.
     useEffect(() => {
-      if (!isActive) setEditingIndex(null)
+      if (!isActive) {
+        setEditingIndex(null)
+        setDrawerIndex(null)
+      }
     }, [isActive])
 
-    // Abandon an open editor only on a *real* key change. `keyName` is the
-    // selected key's name buffer, and the post-ARSET `refreshKeyInfoAction`
-    // swaps in a new buffer instance for the same key — comparing by value
-    // (not reference) stops that refresh from closing an editor the user has
-    // meanwhile reopened on another row.
-    const prevKeyRef = useRef(keyName)
+    // Abandon an open editor on a real key change, keyed off the live
+    // selection — `keyName` lags a switch during fetchKeyInfo, which would let
+    // a pending drawer save ARSET the old key. Compare by value so a same-key
+    // info refresh (a fresh buffer for the same key) doesn't close the editor.
+    const prevKeyRef = useRef(liveSelectedKey)
     useEffect(() => {
-      if (isSameKey(prevKeyRef.current, keyName)) return
-      prevKeyRef.current = keyName
+      if (isSameKey(prevKeyRef.current, liveSelectedKey)) return
+      prevKeyRef.current = liveSelectedKey
       setEditingIndex(null)
-    }, [keyName])
+      setDrawerIndex(null)
+    }, [liveSelectedKey])
 
-    // Re-enable refresh when the table unmounts entirely (panel close).
+    // Abandon an open editor when the value formatter changes. The editor seed
+    // was serialized under the previous format, but a save re-serializes with
+    // the current `viewFormat` — saving the unchanged seed under a new format
+    // would write different bytes (e.g. "41" as Unicode vs the byte 0x41 as
+    // HEX).
+    const prevFormatRef = useRef(viewFormat)
+    useEffect(() => {
+      if (prevFormatRef.current === viewFormat) return
+      prevFormatRef.current = viewFormat
+      setEditingIndex(null)
+      setDrawerIndex(null)
+    }, [viewFormat])
+
+    // Re-enable refresh when the table unmounts (panel close), and abandon a
+    // pending drawer save — otherwise Confirm could ARSET the old key after a
+    // key switch unmounts the table.
     useEffect(
       () => () => {
         dispatch(setSelectedKeyRefreshDisabled(false))
+        drawerIndexRef.current = null
       },
       [dispatch],
     )
@@ -141,14 +209,25 @@ const ArrayDetailsTable = memo(
       (index: string, isEditing: boolean) => {
         // Opening an editor starts a new session; a stale save's callback that
         // compares against its captured session id will then no-op.
-        if (isEditing) editSessionRef.current += 1
+        if (isEditing) {
+          editSessionRef.current += 1
+          // Capture the connected database to guard a save confirmed later.
+          inlineEditInstanceIdRef.current = connectedInstanceIdRef.current
+          // Inline and drawer are one mutually-exclusive edit session — opening
+          // inline closes any open drawer.
+          setDrawerIndex(null)
+        }
         setEditingIndex(isEditing ? index : null)
       },
       [],
     )
 
     const handleApplyEditElement = useCallback(
-      (index: string, value: string) => {
+      (
+        index: string,
+        value: string,
+        options?: { startInstanceId?: string; onSuccess?: () => void },
+      ) => {
         const editSession = editSessionRef.current
         dispatch(
           updateArrayElementAction(
@@ -156,19 +235,84 @@ const ArrayDetailsTable = memo(
               key: keyName,
               index,
               value: stringToSerializedBufferFormat(viewFormat, value),
+              // Inline saves fall back to the open-time id; the drawer passes
+              // its own save-time id.
+              startInstanceId:
+                options?.startInstanceId ?? inlineEditInstanceIdRef.current,
             },
-            () => {
-              // Ignore a completion whose editor the user has since closed and
-              // reopened (a newer session) — closing it would discard the new
-              // input. handleEditElement's own guard runs for the live session.
-              if (editSessionRef.current === editSession) {
-                handleEditElement(index, false)
-              }
-            },
+            options?.onSuccess ??
+              (() => {
+                // Ignore a completion whose editor the user has since closed
+                // and reopened (a newer session) — closing it would discard the
+                // new input. handleEditElement's guard runs for the live session.
+                if (editSessionRef.current === editSession) {
+                  handleEditElement(index, false)
+                }
+              }),
           ),
         )
       },
       [dispatch, keyName, viewFormat, handleEditElement],
+    )
+
+    // Open the Monaco drawer for a row, capturing its serialized value as the
+    // seed. Guarded like the inline editor: refresh pauses while it's open.
+    const handleOpenValueEditor = useCallback(
+      (index: string) => {
+        const element = elements.find((el) => el.index === index)
+        if (!element?.value) return
+        const { serialize } = getArrayElementEditState(
+          element.value as RedisResponseBuffer,
+          compressor,
+          viewFormat,
+          t,
+        )
+        setDrawerSeed(serialize())
+        // Capture the connected database to guard a save confirmed later.
+        drawerEditInstanceIdRef.current = connectedInstanceIdRef.current
+        // Opening the drawer starts a new edit session (like inline) so a
+        // stale save's onSuccess can't close a drawer the user has since
+        // reopened.
+        editSessionRef.current += 1
+        // Inline and drawer are one mutually-exclusive edit session — opening
+        // the drawer closes any open inline edit, so a later drawer save can't
+        // clear a still-open inline editor on another row.
+        setEditingIndex(null)
+        setDrawerIndex(index)
+      },
+      [elements, compressor, viewFormat],
+    )
+
+    const handleDrawerSave = useCallback(
+      (value: string) => {
+        const savedIndex = drawerIndex
+        const savedInstanceId = drawerEditInstanceIdRef.current
+        if (savedIndex === null) return
+        requestConfirmation({
+          title: t('browser.keyDetails.editable.confirmTitle'),
+          actionDescription: t('browser.keyDetails.editable.confirmMessage'),
+          confirmButtonText: t('browser.keyDetails.editable.confirmButton'),
+          commandId: BrowserConfirmationCommandId.EditValue,
+          disableConfirmationInput: true,
+          onConfirm: () => {
+            // Skip if the drawer was abandoned (Cancel, key/format change, tab
+            // switch) while the confirmation was pending.
+            if (drawerIndexRef.current !== savedIndex) return
+            const editSession = editSessionRef.current
+            handleApplyEditElement(savedIndex, value, {
+              // Skip the write if the database changed since Save.
+              startInstanceId: savedInstanceId,
+              // Close the drawer only on a successful write for the current
+              // session — a skipped, failed or superseded save leaves the edit
+              // in place.
+              onSuccess: () => {
+                if (editSessionRef.current === editSession) setDrawerIndex(null)
+              },
+            })
+          },
+        })
+      },
+      [drawerIndex, requestConfirmation, handleApplyEditElement],
     )
 
     // Pass shared per-cell config via the table's `meta` so the static
@@ -179,8 +323,10 @@ const ArrayDetailsTable = memo(
         compressor,
         viewFormat,
         editingIndex,
+        isValueDrawerOpen: drawerIndex !== null,
         onEditElement: handleEditElement,
         onApplyEditElement: handleApplyEditElement,
+        onOpenValueEditor: handleOpenValueEditor,
         updating,
         loading: readLoading,
         deleteConfig,
@@ -190,8 +336,10 @@ const ArrayDetailsTable = memo(
         compressor,
         viewFormat,
         editingIndex,
+        drawerIndex,
         handleEditElement,
         handleApplyEditElement,
+        handleOpenValueEditor,
         updating,
         readLoading,
         deleteConfig,
@@ -215,6 +363,14 @@ const ArrayDetailsTable = memo(
       () =>
         buildSelectionColumn<ArrayDataElement>({
           disableSelectAll: !hasSelectableRows,
+          // Override redis-ui's default 4.2rem so the column hugs the checkbox;
+          // the class trims the cell's side padding (see ArrayDetailsTable.styles).
+          size: SELECTION_COLUMN_WIDTH_REM,
+          sizeUnit: 'rem',
+          getCellProps: () => ({ className: SELECTION_COLUMN_CELL_CLASS }),
+          getHeaderCellProps: () => ({
+            className: SELECTION_COLUMN_CELL_CLASS,
+          }),
         }),
       [buildSelectionColumn, hasSelectableRows],
     )
@@ -225,22 +381,32 @@ const ArrayDetailsTable = memo(
     // from `meta`, so rebuilding `columns` on every toggle would needlessly
     // reset table state (e.g. expanded Search context rows).
     const hasSelectionColumn = Boolean(selectionConfig)
-    const hasActionsColumn = Boolean(deleteConfig)
+    // The actions column hosts the per-row edit + expand triggers (editing is
+    // always wired on this table) alongside the optional delete trigger, so it
+    // is always present.
+    const hasActionsColumn = true
     const columns = useMemo(() => {
+      // Column defs are static (module-level); translate their string headers
+      // at render so the header cells read the locale, not the raw key.
+      const localized = arrayColumns.map((col) =>
+        typeof col.header === 'string'
+          ? { ...col, header: t(col.header as ParseKeys) }
+          : col,
+      )
       const cols = hasSelectionColumn
-        ? [selectionColumn, ...arrayColumns]
-        : [...arrayColumns]
+        ? [selectionColumn, ...localized]
+        : [...localized]
       if (hasActionsColumn) cols.push(actionsColumn)
       return cols
-    }, [hasSelectionColumn, hasActionsColumn, selectionColumn])
+    }, [hasSelectionColumn, hasActionsColumn, selectionColumn, t])
 
     // Use `||` rather than `??` here: the array slice clears `error` to `''`
     // after a successful request, and `''` is not nullish, so `??` would
     // surface the empty string and the table would render with no text on
     // an empty-but-successful range/scan.
     const emptyState = loading
-      ? ARRAY_TABLE_LOADING_MESSAGE
-      : error || ARRAY_TABLE_EMPTY_MESSAGE
+      ? t(ARRAY_TABLE_LOADING_MESSAGE)
+      : error || t(ARRAY_TABLE_EMPTY_MESSAGE)
 
     // Multi-select is opt-in. Selection keys are element indexes (`getRowId`),
     // and gaps/non-deletable rows have their checkbox disabled.
@@ -262,13 +428,21 @@ const ArrayDetailsTable = memo(
           data={elements}
           meta={meta}
           stripedRows
-          minWidth={TABLE_MIN_WIDTH}
+          minWidth={getTableMinWidth({ hasSelectionColumn, hasActionsColumn })}
           emptyState={emptyState}
           renderExpandedRow={renderExpandedRow}
           getIsRowExpandable={getIsRowExpandable}
           expandRowOnClick={expandRowOnClick}
           {...selectionProps}
           data-testid={`${TEST_ID}-table`}
+        />
+        <ArrayValueEditorDrawer
+          isOpen={drawerIndex !== null}
+          index={drawerIndex ?? ''}
+          initialValue={drawerSeed}
+          isSaveDisabled={updating || readLoading}
+          onSave={handleDrawerSave}
+          onClose={() => setDrawerIndex(null)}
         />
       </S.Container>
     )

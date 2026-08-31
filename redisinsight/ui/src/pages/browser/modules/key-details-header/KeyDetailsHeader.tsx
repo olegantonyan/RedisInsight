@@ -2,6 +2,7 @@ import React, { ReactElement } from 'react'
 import { isUndefined } from 'lodash'
 import { useAppDispatch, useAppSelector } from 'uiSrc/slices/hooks'
 import AutoSizer from 'react-virtualized-auto-sizer'
+import { useTranslation } from 'uiSrc/i18n'
 
 import {
   GroupBadge,
@@ -44,6 +45,7 @@ import {
 } from 'uiSrc/pages/vector-search/hooks/useIsKeyIndexed'
 import { ViewIndexDataButton } from 'uiSrc/pages/browser/components/view-index-data-button'
 import { MakeSearchableButton } from 'uiSrc/pages/browser/components/make-searchable-button'
+import { ConfigValueDecoderButton } from 'uiSrc/pages/browser/components/value-decoder'
 import { KeyDetailsHeaderName } from './components/key-details-header-name'
 import { KeyDetailsHeaderTTL } from './components/key-details-header-ttl'
 import { KeyDetailsHeaderDelete } from './components/key-details-header-delete'
@@ -85,16 +87,20 @@ const KeyDetailsHeader = ({
   } = useAppSelector(selectedKeyDataSelector) ?? initialKeyInfo
   const { id: instanceId } = useAppSelector(connectedInstanceSelector)
   const { viewType } = useAppSelector(keysSelector)
+  const { t } = useTranslation()
 
   const isSearchableType = SEARCHABLE_KEY_TYPES.includes(type as KeyTypes)
-  const { indexes, status: keyIndexedStatus } = useIsKeyIndexed(
-    isSearchableType ? keyName || '' : '',
-  )
+  const {
+    indexes,
+    status: keyIndexedStatus,
+    refresh: refreshKeyIndexes,
+  } = useIsKeyIndexed(isSearchableType ? keyName || '' : '')
 
   const dispatch = useAppDispatch()
 
   const handleRefreshKey = () => {
     dispatch(refreshKey(keyBuffer!, type, undefined, length))
+    refreshKeyIndexes()
   }
 
   const handleEditTTL = (key: RedisResponseBuffer, ttl: number) => {
@@ -165,25 +171,30 @@ const KeyDetailsHeader = ({
                 <FlexItem grow />
                 {isSearchableType &&
                   keyIndexedStatus === UseIsKeyIndexedStatus.Ready && (
-                    <FeatureFlagComponent name={FeatureFlags.vectorSearchV2}>
-                      <FlexItem>
-                        {indexes.length > 0 ? (
-                          <ViewIndexDataButton
-                            indexes={indexes}
-                            instanceId={instanceId}
+                    <FlexItem>
+                      {indexes.length > 0 ? (
+                        <ViewIndexDataButton
+                          indexes={indexes}
+                          instanceId={instanceId}
+                        />
+                      ) : (
+                        <S.MakeSearchableWrapper>
+                          <MakeSearchableButton
+                            keyName={keyBuffer!}
+                            keyNameString={keyName ?? ''}
+                            keyType={type as KeyTypes}
                           />
-                        ) : (
-                          <S.MakeSearchableWrapper>
-                            <MakeSearchableButton
-                              keyName={keyBuffer!}
-                              keyNameString={keyName ?? ''}
-                              keyType={type as KeyTypes}
-                            />
-                          </S.MakeSearchableWrapper>
-                        )}
-                      </FlexItem>
-                    </FeatureFlagComponent>
+                        </S.MakeSearchableWrapper>
+                      )}
+                    </FlexItem>
                   )}
+                {type === KeyTypes.Hash && (
+                  <FeatureFlagComponent name={FeatureFlags.valueDecoder}>
+                    <FlexItem>
+                      <ConfigValueDecoderButton />
+                    </FlexItem>
+                  </FeatureFlagComponent>
+                )}
                 {!arePanelsCollapsed && (
                   <FlexItem>
                     <FullScreen
@@ -194,10 +205,13 @@ const KeyDetailsHeader = ({
                 )}
                 <FlexItem>
                   {(!arePanelsCollapsed || isFullScreen) && (
-                    <RiTooltip content="Close" position="left">
+                    <RiTooltip
+                      content={t('browser.keyDetails.close.tooltip')}
+                      position="left"
+                    >
                       <IconButton
                         icon={CancelSlimIcon}
-                        aria-label="Close key"
+                        aria-label={t('browser.keyDetails.close.aria')}
                         className={styles.closeBtn}
                         onClick={() => onCloseKey()}
                         data-testid="close-key-btn"

@@ -17,6 +17,7 @@ enum BrowserStorageItem {
   wbCommandsHistory = 'command_execution',
   treeViewDelimiter = 'treeViewDelimiter',
   treeViewSort = 'treeViewSort',
+  treeViewPrefixLength = 'treeViewDelimiterPrefixLength',
   autoRefreshRate = 'autoRefreshRate',
   bulkActionDeleteId = 'bulkActionDeleteId',
   dbConfig = 'dbConfig_',
@@ -48,6 +49,7 @@ enum BrowserStorageItem {
   wbTsResultPreferences = 'wbTsResultPreferences_',
   prodModeCtaActioned = 'prodModeCtaActioned',
   whatsNewLastVersionSeen = 'whatsNewLastVersionSeen',
+  valueDecoderRules = 'valueDecoderRules_',
 }
 
 export default BrowserStorageItem

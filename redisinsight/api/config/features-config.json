@@ -1,6 +1,22 @@
 {
-  "version": 6,
+  "version": 11,
   "features": {
+    "appUpdateStrategySettings": {
+      "flag": true,
+      "perc": [[0, 100]],
+      "filters": [
+        {
+          "name": "config.server.buildType",
+          "value": "ELECTRON",
+          "cond": "eq"
+        }
+      ]
+    },
+    "vectorSearchEnhancements": {
+      "flag": true,
+      "perc": [[0, 100]],
+      "filters": []
+    },
     "dev-language": {
       "flag": true,
       "perc": [[0, 0]],
@@ -148,9 +164,9 @@
       "flag": true,
       "perc": [[0, 100]]
     },
-    "dev-array": {
+    "array": {
       "flag": true,
-      "perc": [[0, 0]]
+      "perc": [[0, 100]]
     },
     "prodMode": {
       "flag": true,
@@ -158,6 +174,10 @@
     },
     "whatsNew": {
       "flag": true,
+      "perc": [[0, 100]]
+    },
+    "valueDecoder": {
+      "flag": false,
       "perc": [[0, 100]]
     }
   }

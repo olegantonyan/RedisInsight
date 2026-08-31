@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from 'react'
 
+import { useTranslation } from 'uiSrc/i18n'
 import { ToggleButton } from 'uiSrc/components/base/forms/buttons'
 import {
   Menu,
@@ -9,31 +10,24 @@ import {
   MenuDropdownArrow,
 } from 'uiSrc/components/base/layout/menu'
 import { RiTooltip } from 'uiSrc/components/base/tooltip'
+import { useAppSelector } from 'uiSrc/slices/hooks'
+import { isVectorSearchEnhancementsEnabledSelector } from 'uiSrc/slices/app/features'
 
 import { useVectorSearch } from '../../../../context/vector-search'
 import { SearchTelemetrySource } from '../../../../telemetry.constants'
 
 export const CreateIndexMenu = () => {
+  const { t } = useTranslation()
   const {
     openPickSampleDataModal,
     navigateToExistingDataFlow,
     hasExistingKeys,
     hasExistingKeysLoading,
+    hasExistingKeysError,
   } = useVectorSearch()
-
-  const isExistingDataDisabled = hasExistingKeysLoading || !hasExistingKeys
-
-  const existingDataTooltip = useMemo(() => {
-    if (hasExistingKeysLoading) {
-      return 'Checking for existing keys…'
-    }
-
-    if (!hasExistingKeys) {
-      return 'No Hash or JSON keys found in your database'
-    }
-
-    return null
-  }, [hasExistingKeysLoading, hasExistingKeys])
+  const enhancementsEnabled = useAppSelector(
+    isVectorSearchEnhancementsEnabledSelector,
+  )
 
   const handleSampleData = useCallback(
     () => openPickSampleDataModal(SearchTelemetrySource.List),
@@ -45,16 +39,42 @@ export const CreateIndexMenu = () => {
     [navigateToExistingDataFlow],
   )
 
+  const isExistingDataDisabled =
+    !enhancementsEnabled &&
+    (hasExistingKeysLoading || (!hasExistingKeys && !hasExistingKeysError))
+
+  const existingDataTooltip = useMemo(() => {
+    if (enhancementsEnabled) {
+      return null
+    }
+
+    if (hasExistingKeysLoading) {
+      return t('vectorSearch.list.createMenu.checkingKeys')
+    }
+
+    if (!hasExistingKeys && !hasExistingKeysError) {
+      return t('vectorSearch.list.createMenu.noKeys')
+    }
+
+    return null
+  }, [
+    enhancementsEnabled,
+    hasExistingKeysLoading,
+    hasExistingKeys,
+    hasExistingKeysError,
+    t,
+  ])
+
   return (
     <Menu>
       <MenuTrigger>
         <ToggleButton data-testid="vector-search--list--create-index-btn">
-          + Create search index
+          {t('vectorSearch.list.createMenu.create')}
         </ToggleButton>
       </MenuTrigger>
       <MenuContent align="end">
         <MenuItem
-          text="Use sample data"
+          text={t('vectorSearch.list.createMenu.sampleData')}
           onClick={handleSampleData}
           data-testid="vector-search--list--create-index--sample-data"
         />
@@ -62,7 +82,7 @@ export const CreateIndexMenu = () => {
           content={isExistingDataDisabled ? existingDataTooltip : null}
         >
           <MenuItem
-            text="Use existing data"
+            text={t('vectorSearch.list.createMenu.existingData')}
             disabled={isExistingDataDisabled}
             onClick={handleExistingData}
             data-testid="vector-search--list--create-index--existing-data"

@@ -81,6 +81,29 @@ import { Trans } from 'uiSrc/i18n';
 // getTranslatedApiError() fills {{databaseId}} from response.data.resource — no extra code.
 ```
 
+## Plurals
+
+Use i18next's native **`count`-based** plurals — never a hand-rolled `isPlural` branch with
+`.single`/`.plural` keys.
+
+- Add one key per plural form with the i18next suffix: `key_one`, `key_other` (a language may
+  need more forms — `_few`, `_many` — but `en`/`bg` only use `_one`/`_other`).
+- Reference the **base** key (no suffix) and pass `count`; i18next selects the form:
+  `t('key', { count })` or `<Trans i18nKey="key" count={n} …/>`.
+- The base key type-checks even though only the suffixed forms are in `en.json` — i18next's
+  types resolve it from the `_one`/`_other` entries.
+- **Write the whole sentence in each form.** Don't interpolate the one differing word as a
+  fragment — word order, agreement, and the number of plural forms vary by language.
+- Renaming a key (e.g. `.single` → `_one`) leaves the old key behind in `bg.json` because
+  `i18n:extract` doesn't prune — delete the orphan so en/bg parity holds.
+
+```tsx
+// en.json:
+//   "workbench.runConfirm.body_one":   "…This command is part of…"
+//   "workbench.runConfirm.body_other": "…These commands are part of…"
+<Trans i18nKey="workbench.runConfirm.body" count={commands.length} components={{ bold }} />
+```
+
 ## Keys
 
 - **Flat, dotted keys** — `keySeparator` and `nsSeparator` are `false`, so a dot is a literal character, not nesting. `"api.error.code.11000.title"` is a single key.
@@ -130,13 +153,13 @@ The backend ships a stable `errorCode` on every user-facing error (see
 1. Add the key + English value to `en.json` **and** the same key to `bg.json` (translated, or empty to defer). Keep both sorted and in parity.
 2. Reference it: `t('my.key')` / `i18n.t('my.key')` / `<Trans i18nKey="my.key" …/>`.
 3. For dynamic values, pass `values` (interpolation) or `resource` (backend errors).
-4. Run `yarn i18n:extract` to sync/sort, and `yarn i18n:check` to catch duplicate keys.
-5. `yarn type-check` (new literal keys must resolve) and `yarn lint:ui`.
+4. Run `npm run i18n:extract` to sync/sort, and `npm run i18n:check` to catch duplicate keys.
+5. `npm run type-check` (new literal keys must resolve) and `npm run lint:ui`.
 
 ## Tooling
 
-- `yarn i18n:extract` — scans `t()`/`<Trans>` usages and syncs `en.json`/`bg.json` (alphabetical; does **not** prune unused keys). Note: dynamic (`as never`) keys aren't discovered by extraction — keep them in the locale files manually.
-- `yarn i18n:check` — fails if a locale file has a **duplicate key** (JSON silently keeps the last, so a dup would shadow a value). Runs in CI on PRs touching `locales/**`.
+- `npm run i18n:extract` — scans `t()`/`<Trans>` usages and syncs `en.json`/`bg.json` (alphabetical; does **not** prune unused keys). Note: dynamic (`as never`) keys aren't discovered by extraction — keep them in the locale files manually.
+- `npm run i18n:check` — fails if a locale file has a **duplicate key** (JSON silently keeps the last, so a dup would shadow a value). Runs in CI on PRs touching `locales/**`.
 - Dev override: append `?lang=bg` to the URL to preview Bulgarian.
 
 ## Do / Don't
@@ -146,3 +169,4 @@ The backend ships a stable `errorCode` on every user-facing error (see
 - ✅ Keep en/bg key parity; empty bg is an acceptable "later" placeholder.
 - ❌ Don't hardcode user-facing strings — add a key.
 - ❌ Don't hand-edit the locale-file key order — let `i18n:extract` sort.
+- ❌ Don't hand-roll plurals with a JS branch — use `count` + `key_one`/`key_other` (see Plurals).

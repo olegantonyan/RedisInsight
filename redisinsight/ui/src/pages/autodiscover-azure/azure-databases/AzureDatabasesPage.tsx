@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from 'uiSrc/slices/hooks'
 
 import { Pages } from 'uiSrc/constants'
 import { setTitle } from 'uiSrc/utils'
+import i18n, { useTranslation } from 'uiSrc/i18n'
 import { Text } from 'uiSrc/components/base/text'
 import { fetchInstancesAction } from 'uiSrc/slices/instances/instances'
 import { addMessageNotification } from 'uiSrc/slices/app/notifications'
@@ -18,7 +19,10 @@ import {
   AzureRedisDatabase,
   ImportAzureDatabaseResponse,
 } from 'uiSrc/slices/interfaces'
-import { azureAuthAccountSelector } from 'uiSrc/slices/oauth/azure'
+import {
+  azureAuthAccountSelector,
+  azureAuthTenantSelector,
+} from 'uiSrc/slices/oauth/azure'
 import {
   addDatabasesAzureAction,
   azureSelector,
@@ -34,8 +38,10 @@ const groupErrorsByMessage = (
 ): Record<string, string[]> =>
   failedResults.reduce<Record<string, string[]>>((acc, r) => {
     const db = selectedDatabases.find((db) => db.id === r.id)
-    const dbName = db?.name || 'database'
-    const errorMessage = r.message || 'Failed to add database'
+    const dbName =
+      db?.name || i18n.t('autodiscover.azure.databases.unknownDatabase')
+    const errorMessage =
+      r.message || i18n.t('autodiscover.azure.databases.addFailedDefault')
 
     if (!acc[errorMessage]) {
       acc[errorMessage] = []
@@ -68,7 +74,9 @@ const showErrorToast = (
     errorMessages.DEFAULT(
       <>{errorList}</>,
       () => {},
-      `Failed to add ${failedResults.length} database${failedResults.length > 1 ? 's' : ''}`,
+      i18n.t('autodiscover.azure.databases.addFailedTitle', {
+        count: failedResults.length,
+      }),
     ),
     {
       variant: riToast.Variant.Danger,
@@ -78,9 +86,11 @@ const showErrorToast = (
 }
 
 const AzureDatabasesPage = () => {
+  const { t } = useTranslation()
   const history = useHistory()
   const dispatch = useAppDispatch()
   const account = useAppSelector(azureAuthAccountSelector)
+  const tenant = useAppSelector(azureAuthTenantSelector)
   const { loading, error, databases, selectedSubscription, loaded } =
     useAppSelector(azureSelector)
 
@@ -105,12 +115,16 @@ const AzureDatabasesPage = () => {
       return
     }
 
-    setTitle('Azure Databases')
+    setTitle(t('autodiscover.azure.databases.pageTitle'))
 
     // Only fetch if not already loaded
     if (!loaded.databases) {
       dispatch(
-        fetchDatabasesAzure(account.id, selectedSubscription.subscriptionId),
+        fetchDatabasesAzure(
+          account.id,
+          selectedSubscription.subscriptionId,
+          tenant ?? undefined,
+        ),
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,8 +152,11 @@ const AzureDatabasesPage = () => {
       addMessageNotification(
         successMessages.ADDED_NEW_INSTANCE(
           successResults.length > 1
-            ? `${successResults.length} databases`
-            : successDb?.name || 'Database',
+            ? t('autodiscover.azure.databases.addedMultiple', {
+                count: successResults.length,
+              })
+            : successDb?.name ||
+                t('autodiscover.azure.databases.defaultDatabaseName'),
         ),
       ),
     )
@@ -160,7 +177,12 @@ const AzureDatabasesPage = () => {
 
     const databaseIds = selectedDatabases.map((db) => db.id)
     const results = await dispatch(
-      addDatabasesAzureAction(account.id, databaseIds, authType),
+      addDatabasesAzureAction(
+        account.id,
+        databaseIds,
+        authType,
+        tenant ?? undefined,
+      ),
     )
 
     const successResults = results.filter(
@@ -189,7 +211,11 @@ const AzureDatabasesPage = () => {
     if (account?.id && selectedSubscription) {
       dispatch(clearDatabasesAzure())
       dispatch(
-        fetchDatabasesAzure(account.id, selectedSubscription.subscriptionId),
+        fetchDatabasesAzure(
+          account.id,
+          selectedSubscription.subscriptionId,
+          tenant ?? undefined,
+        ),
       )
       setSelectedDatabases([])
     }

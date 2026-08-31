@@ -14,6 +14,7 @@ import { RiIcon } from 'uiSrc/components/base/icons/RiIcon'
 import styles from '../styles.module.scss'
 import { DbInfoGroup } from './DbInfo.styles'
 import { Row } from 'uiSrc/components/base/layout/flex'
+import { useTranslation } from 'uiSrc/i18n'
 import { DbInfoLabelValue } from './types'
 import { Endpoint, AdditionalRedisModule } from 'apiClient'
 
@@ -26,6 +27,7 @@ export interface Props {
   db: Nullable<number>
   modules: AdditionalRedisModule[]
   isFromCloud: boolean
+  isManaged?: boolean
 }
 
 export const ListGroupItemLabelValue = ({
@@ -60,28 +62,33 @@ const AppendEndpoints = ({
   nodes: Endpoint[]
   host: string
   port: string
-}) => (
-  <RiTooltip
-    title="Host:port"
-    position="left"
-    anchorClassName={styles.anchorEndpoints}
-    content={
-      <ul className={styles.endpointsList}>
-        {nodes?.map(({ host: eHost, port: ePort }) => (
-          <li key={host + port}>
-            <Text>
-              {eHost}:{ePort};
-            </Text>
-          </li>
-        ))}
-      </ul>
-    }
-  >
-    <RiIcon type="InfoIcon" style={{ cursor: 'pointer' }} />
-  </RiTooltip>
-)
+}) => {
+  const { t } = useTranslation()
+
+  return (
+    <RiTooltip
+      title={t('home.form.dbInfo.tooltip.hostPort')}
+      position="left"
+      anchorClassName={styles.anchorEndpoints}
+      content={
+        <ul className={styles.endpointsList}>
+          {nodes?.map(({ host: eHost, port: ePort }) => (
+            <li key={host + port}>
+              <Text>
+                {eHost}:{ePort};
+              </Text>
+            </li>
+          ))}
+        </ul>
+      }
+    >
+      <RiIcon type="InfoIcon" style={{ cursor: 'pointer' }} />
+    </RiTooltip>
+  )
+}
 
 const DbInfo = (props: Props) => {
+  const { t } = useTranslation()
   const {
     connectionType,
     nameFromProvider,
@@ -91,45 +98,52 @@ const DbInfo = (props: Props) => {
     db,
     modules,
     isFromCloud,
+    isManaged = false,
   } = props
+
+  // The endpoint is editable in the form for non-managed, non-cloud databases,
+  // so it is hidden from this read-only summary in that case and shown here
+  // otherwise (cloud/managed databases keep a read-only endpoint).
+  const isEndpointEditable = !isManaged && !isFromCloud
 
   const { server } = useAppSelector(appInfoSelector)
 
   const dbInfo: DbInfoLabelValue[] = [
     {
-      label: 'Connection Type:',
+      label: t('home.form.dbInfo.field.connectionType'),
       value: capitalize(connectionType),
       dataTestId: 'connection-type',
       hide: isFromCloud,
     },
     {
-      label: 'Database Name from Provider:',
+      label: t('home.form.dbInfo.field.nameFromProvider'),
       value: nameFromProvider,
       dataTestId: 'db-name-from-provider',
       hide: !nameFromProvider,
     },
     {
-      label: 'Host:',
+      label: t('home.form.dbInfo.field.host'),
       value: host,
       dataTestId: 'db-info-host',
+      hide: isEndpointEditable && !nodes?.length,
       additionalContent: !!nodes?.length && (
         <AppendEndpoints nodes={nodes} host={host} port={port} />
       ),
     },
     {
-      label: 'Port:',
+      label: t('home.form.dbInfo.field.port'),
       value: port,
       dataTestId: 'db-info-port',
-      hide: server?.buildType !== BuildType.RedisStack && !isFromCloud,
+      hide: server?.buildType !== BuildType.RedisStack && isEndpointEditable,
     },
     {
-      label: 'Database Index:',
+      label: t('home.form.dbInfo.field.databaseIndex'),
       value: db?.toString(),
       dataTestId: 'db-index',
       hide: !db,
     },
     {
-      label: 'Capabilities:',
+      label: t('home.form.dbInfo.field.capabilities'),
       value: <DatabaseListModules modules={modules} />,
       dataTestId: 'capabilities',
       hide: !modules?.length,
@@ -142,7 +156,7 @@ const DbInfo = (props: Props) => {
         .filter((item) => !item.hide)
         .map((item) => (
           <ListGroupItemLabelValue
-            key={item.label}
+            key={item.dataTestId}
             label={item.label}
             value={item.value}
             dataTestId={item.dataTestId}

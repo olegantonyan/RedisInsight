@@ -5,30 +5,31 @@ import { RiTooltip } from 'uiSrc/components'
 import { ButtonGroup } from 'uiSrc/components/base/forms/button-group/ButtonGroup'
 import { IconButton, PrimaryButton } from 'uiSrc/components/base/forms/buttons'
 import { FormField } from 'uiSrc/components/base/forms/FormField'
-import { InfoIcon, ResetIcon, RiIcon } from 'uiSrc/components/base/icons'
+import { InfoIcon, ResetIcon } from 'uiSrc/components/base/icons'
 import { FlexItem, Row } from 'uiSrc/components/base/layout/flex'
 import { TextInput, QuantityCounter } from 'uiSrc/components/base/inputs'
-import { Text } from 'uiSrc/components/base/text'
 import { vectorSetAttributeKeysSelector } from 'uiSrc/slices/browser/vectorSet'
 import { connectedInstanceSelector } from 'uiSrc/slices/instances/instances'
 import { sendEventTelemetry, TelemetryEvent } from 'uiSrc/telemetry'
+import {
+  CommandPreview,
+  PreviewToggle,
+  useResponsivePreviewLabel,
+} from 'uiSrc/pages/browser/modules/key-details/shared'
+import { useTranslation } from 'uiSrc/i18n'
 
 import { VectorSetSimilarityInputMode } from '../../telemetry.constants'
 import { getVectorFieldInfo } from '../../vector-set-element-form/utils'
 import { useSimilaritySearch } from '../../hooks/useSimilaritySearch'
 
-import { CommandPreview } from '../command-preview'
 import { FilterInputWithSuggestions } from '../filter-input-with-suggestions'
 import { FilterSyntaxHelpPopover } from '../filter-syntax-help-popover'
 import * as S from './SimilaritySearchForm.styles'
 import {
+  COMMAND_PREVIEW_TEST_ID,
   ELEMENT_MODE_TOOLTIP,
   ELEMENT_PLACEHOLDER,
   FILTER_PLACEHOLDER,
-  PREVIEW_TOGGLE_ARIA_LABEL,
-  PREVIEW_TOGGLE_HIDE_TOOLTIP,
-  PREVIEW_TOGGLE_LABEL,
-  PREVIEW_TOGGLE_SHOW_TOOLTIP,
   QUERY_NOT_READY_TOOLTIP,
   SIMILARITY_SEARCH_COUNT_DEFAULT,
   SIMILARITY_SEARCH_COUNT_MAX,
@@ -47,6 +48,7 @@ import {
 export const SimilaritySearchForm = ({
   prefillElement,
 }: SimilaritySearchFormProps = {}) => {
+  const { t } = useTranslation()
   const {
     loading,
     previewLoading,
@@ -62,6 +64,7 @@ export const SimilaritySearchForm = ({
     useState<SimilaritySearchFormState>(initialFormState)
 
   const [previewVisible, setPreviewVisible] = useState(false)
+  const { containerRef, isWide } = useResponsivePreviewLabel()
 
   const { id: databaseId } = useAppSelector(connectedInstanceSelector)
   const attributeKeys = useAppSelector(vectorSetAttributeKeysSelector)
@@ -110,8 +113,8 @@ export const SimilaritySearchForm = ({
   }
 
   const vectorFieldInfo = useMemo(
-    () => getVectorFieldInfo(state.vectorInput, vectorDim),
-    [state.vectorInput, vectorDim],
+    () => getVectorFieldInfo(state.vectorInput, vectorDim, t),
+    [state.vectorInput, vectorDim, t],
   )
 
   const queryReady = isQueryReady(state, vectorDim)
@@ -155,10 +158,10 @@ export const SimilaritySearchForm = ({
               data-testid={`${TEST_ID}-mode-vector`}
             >
               <S.ModeButtonContent>
-                Vector
-                <RiTooltip content={VECTOR_MODE_TOOLTIP} position="top">
+                {t('browser.vectorSet.search.vectorMode')}
+                <RiTooltip content={t(VECTOR_MODE_TOOLTIP)} position="top">
                   <S.ModeInfoIcon
-                    aria-label={VECTOR_MODE_TOOLTIP}
+                    aria-label={t(VECTOR_MODE_TOOLTIP)}
                     data-testid={`${TEST_ID}-mode-vector-info`}
                   >
                     <InfoIcon />
@@ -172,10 +175,10 @@ export const SimilaritySearchForm = ({
               data-testid={`${TEST_ID}-mode-element`}
             >
               <S.ModeButtonContent>
-                Element
-                <RiTooltip content={ELEMENT_MODE_TOOLTIP} position="top">
+                {t('browser.vectorSet.search.elementMode')}
+                <RiTooltip content={t(ELEMENT_MODE_TOOLTIP)} position="top">
                   <S.ModeInfoIcon
-                    aria-label={ELEMENT_MODE_TOOLTIP}
+                    aria-label={t(ELEMENT_MODE_TOOLTIP)}
                     data-testid={`${TEST_ID}-mode-element-info`}
                   >
                     <InfoIcon />
@@ -189,7 +192,7 @@ export const SimilaritySearchForm = ({
           {state.mode === SimilaritySearchMode.Vector ? (
             <FormField>
               <TextInput
-                placeholder={VECTOR_PLACEHOLDER}
+                placeholder={t(VECTOR_PLACEHOLDER)}
                 value={state.vectorInput}
                 onChange={(value) => setField('vectorInput', value)}
                 disabled={loading}
@@ -202,7 +205,7 @@ export const SimilaritySearchForm = ({
           ) : (
             <FormField>
               <TextInput
-                placeholder={ELEMENT_PLACEHOLDER}
+                placeholder={t(ELEMENT_PLACEHOLDER)}
                 value={state.elementInput}
                 onChange={(value) => setField('elementInput', value)}
                 disabled={loading}
@@ -214,7 +217,7 @@ export const SimilaritySearchForm = ({
         <FlexItem grow={false}>
           <Row align="center" gap="m">
             <S.CountInlineLabel data-testid={`${TEST_ID}-count-label`}>
-              Result count
+              {t('browser.vectorSet.search.resultCount')}
             </S.CountInlineLabel>
             <QuantityCounter
               value={state.count ?? SIMILARITY_SEARCH_COUNT_DEFAULT}
@@ -235,7 +238,7 @@ export const SimilaritySearchForm = ({
           <FormField>
             <Row align="center" gap="s">
               <S.FilterLabel>
-                Filter expression
+                {t('browser.vectorSet.search.filterLabel')}
                 <FilterSyntaxHelpPopover />
               </S.FilterLabel>
               <FlexItem grow>
@@ -253,50 +256,44 @@ export const SimilaritySearchForm = ({
         </FlexItem>
       </Row>
 
-      <S.ActionRow align="center" gap="m">
+      <S.ActionRow ref={containerRef}>
         <FlexItem grow={false}>
-          <RiTooltip
-            content={
-              previewVisible
-                ? PREVIEW_TOGGLE_HIDE_TOOLTIP
-                : !queryReady
-                  ? QUERY_NOT_READY_TOOLTIP
-                  : PREVIEW_TOGGLE_SHOW_TOOLTIP
-            }
-            position="top"
-          >
-            <S.PreviewToggleButton
-              pressed={previewVisible}
-              onPressedChange={togglePreview}
-              disabled={!queryReady && !previewVisible}
-              aria-label={PREVIEW_TOGGLE_ARIA_LABEL}
-              data-testid={`${TEST_ID}-preview-toggle`}
-            >
-              <RiIcon size="m" type="CliIcon" />
-              <Text size="s">{PREVIEW_TOGGLE_LABEL}</Text>
-            </S.PreviewToggleButton>
-          </RiTooltip>
+          <PreviewToggle
+            pressed={previewVisible}
+            onPressedChange={togglePreview}
+            wide={isWide}
+            disabled={!queryReady && !previewVisible}
+            disabledTooltip={t(QUERY_NOT_READY_TOOLTIP)}
+            data-testid={`${TEST_ID}-preview-toggle`}
+          />
         </FlexItem>
         <FlexItem grow>
           {previewVisible && (
-            <CommandPreview command={preview ?? ''} loading={previewLoading} />
+            <CommandPreview
+              command={preview ?? ''}
+              loading={previewLoading}
+              data-testid={COMMAND_PREVIEW_TEST_ID}
+            />
           )}
         </FlexItem>
         <FlexItem grow={false}>
-          <RiTooltip content="Reset form" position="top">
+          <RiTooltip
+            content={t('browser.vectorSet.search.resetTooltip')}
+            position="top"
+          >
             <IconButton
               size="M"
               icon={ResetIcon}
               onClick={handleReset}
               disabled={loading}
-              aria-label="Reset similarity search form"
+              aria-label={t('browser.vectorSet.search.resetAria')}
               data-testid={`${TEST_ID}-reset`}
             />
           </RiTooltip>
         </FlexItem>
         <FlexItem grow={false}>
           <RiTooltip
-            content={!queryReady ? QUERY_NOT_READY_TOOLTIP : null}
+            content={!queryReady ? t(QUERY_NOT_READY_TOOLTIP) : null}
             position="top"
           >
             <PrimaryButton
@@ -304,7 +301,7 @@ export const SimilaritySearchForm = ({
               disabled={submitDisabled}
               data-testid={`${TEST_ID}-submit`}
             >
-              Find similar items
+              {t('browser.vectorSet.search.submit')}
             </PrimaryButton>
           </RiTooltip>
         </FlexItem>

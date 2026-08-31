@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useAppSelector } from 'uiSrc/slices/hooks'
 
+import { useTranslation } from 'uiSrc/i18n'
 import { Spacer } from 'uiSrc/components/base/layout'
 import { AutodiscoveryPageTemplate } from 'uiSrc/templates'
 import {
@@ -16,7 +17,10 @@ import {
   Header,
 } from 'uiSrc/components/auto-discover'
 import { AzureSubscription } from 'uiSrc/slices/interfaces'
-import { azureAuthAccountSelector } from 'uiSrc/slices/oauth/azure'
+import {
+  azureAuthAccountSelector,
+  azureAuthTenantSelector,
+} from 'uiSrc/slices/oauth/azure'
 import { Text } from 'uiSrc/components/base/text'
 import {
   EmptyButton,
@@ -27,7 +31,7 @@ import {
 import { Loader } from 'uiSrc/components/base/display'
 import { RefreshIcon } from 'uiSrc/components/base/icons'
 
-import { AZURE_SUBSCRIPTIONS_COLUMNS } from './AzureSubscriptions.constants'
+import { getAzureSubscriptionsColumns } from './AzureSubscriptions.constants'
 
 export interface Props {
   subscriptions: AzureSubscription[]
@@ -52,7 +56,10 @@ const AzureSubscriptions = ({
   onRefresh,
   onManualConnection,
 }: Props) => {
+  const { t } = useTranslation()
+  const columns = useMemo(() => getAzureSubscriptionsColumns(t), [t])
   const account = useAppSelector(azureAuthAccountSelector)
+  const tenant = useAppSelector(azureAuthTenantSelector)
   const [items, setItems] = useState<AzureSubscription[]>(subscriptions)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -113,30 +120,38 @@ const AzureSubscriptions = ({
     <AutodiscoveryPageTemplate>
       <DatabaseContainer justify="start">
         <Header
-          title="Azure Subscriptions"
+          title={t('autodiscover.azure.subscriptions.title')}
           onBack={onBack}
           onQueryChange={onQueryChange}
           subTitle={
             account && (
               <Row gap="l" align="center">
                 <Text size="M">
-                  Signed in as{' '}
+                  {t('autodiscover.azure.subscriptions.signedInAs')}{' '}
                   <Text component="span" variant="semiBold">
                     {account.username}
                   </Text>
                 </Text>
+                {tenant && (
+                  <Text size="M" data-testid="azure-active-tenant">
+                    {t('autodiscover.azure.subscriptions.tenant')}{' '}
+                    <Text component="span" variant="semiBold">
+                      {tenant}
+                    </Text>
+                  </Text>
+                )}
                 <EmptyButton
                   variant="primary-inline"
                   onClick={onSwitchAccount}
                   data-testid="btn-switch-account"
                 >
-                  Switch account
+                  {t('autodiscover.azure.subscriptions.switchAccount')}
                 </EmptyButton>
                 <IconButton
                   icon={RefreshIcon}
                   onClick={onRefresh}
                   disabled={loading}
-                  aria-label="Refresh subscriptions"
+                  aria-label={t('autodiscover.azure.subscriptions.refreshAria')}
                   data-testid="btn-refresh-subscriptions"
                 />
               </Row>
@@ -151,7 +166,7 @@ const AzureSubscriptions = ({
             onRowSelectionChange={handleSelectionChange}
             onRowClick={handleRowClick}
             getRowId={(row) => row.subscriptionId}
-            columns={AZURE_SUBSCRIPTIONS_COLUMNS}
+            columns={columns}
             data={items}
             defaultSorting={[{ id: 'displayName', desc: false }]}
             paginationEnabled={items.length > 10}
@@ -163,9 +178,7 @@ const AzureSubscriptions = ({
                 </Col>
               ) : (
                 <EmptyState
-                  message={
-                    error || 'No Azure subscriptions found for this account.'
-                  }
+                  message={error || t('autodiscover.azure.subscriptions.empty')}
                 />
               )
             }
@@ -178,19 +191,21 @@ const AzureSubscriptions = ({
       <Footer>
         <Row justify="end">
           <Row gap="m" grow={false}>
-            <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
+            <SecondaryButton onClick={onClose}>
+              {t('autodiscover.azure.button.cancel')}
+            </SecondaryButton>
             <SecondaryButton
               data-testid="btn-manual-connection"
               onClick={onManualConnection}
             >
-              Manual Connection
+              {t('autodiscover.azure.button.manualConnection')}
             </SecondaryButton>
             <PrimaryButton
               disabled={!selectedId || loading}
               loading={loading}
               onClick={handleSubmit}
             >
-              Show Databases
+              {t('autodiscover.azure.subscriptions.showDatabases')}
             </PrimaryButton>
           </Row>
         </Row>
