@@ -56,6 +56,16 @@ fi
 install -d -m755 "$BUILDROOT$APPDIR"
 cp -a "$UNPACKED/." "$BUILDROOT$APPDIR/"
 
+# better-sqlite3 ships prebuilt .node binaries for every platform/libc. Native
+# packaging tools scan every ELF in the buildroot: dpkg-shlibdeps hard-errors on
+# the foreign-arch and musl ones ("cannot find library libc.musl-x86_64.so.1"),
+# and rpm would turn them into bogus Requires. Only the host's glibc prebuild is
+# ever loaded, so drop the rest.
+KEEP="linux-$(node -p process.arch)"
+find "$BUILDROOT$APPDIR" -type d -name prebuilds -print0 | while IFS= read -r -d '' dir; do
+  find "$dir" -mindepth 1 -maxdepth 1 ! -name "$KEEP" ! -name "$KEEP.node" -exec rm -rf {} +
+done
+
 install -d -m755 "$BUILDROOT/usr/bin"
 ln -sf "$APPDIR/redisinsight" "$BUILDROOT/usr/bin/redisinsight"
 
